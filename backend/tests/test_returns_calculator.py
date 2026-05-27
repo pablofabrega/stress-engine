@@ -124,6 +124,7 @@ class TestRollingRealizedVol:
         pd.testing.assert_series_equal(vol, expected, check_names=False)
 
     def test_leading_nans_equal_window_minus_one(self) -> None:
+        np.random.seed(12)
         returns = pd.Series(np.random.normal(0, 0.01, 30))
         window = 10
         vol = ReturnsCalculator.rolling_realized_vol(returns, window=window)
