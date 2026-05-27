@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-canvas text-ink antialiased;
+  background-image:
+    radial-gradient(circle at top left, rgba(139, 94, 52, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(255, 253, 247, 0.94), rgba(245, 241, 232, 0.98));
+}
+
+a {
+  @apply transition-colors duration-150;
+}
+
