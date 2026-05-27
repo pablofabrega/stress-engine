@@ -8,7 +8,36 @@ import statsmodels.api as sm
 from app.domain.data.fama_french import FamaFrenchLoader
 from app.domain.data.fetchers import HistoricalDataFetcher
 from app.domain.data.returns import ReturnsCalculator
-from app.domain.portfolio.models import FactorDecompositionResult, PortfolioHolding, PortfolioReturnHistory
+from app.domain.portfolio.models import (
+    DV01Result,
+    FactorDecompositionResult,
+    PortfolioDV01Summary,
+    PortfolioHolding,
+    PortfolioReturnHistory,
+)
+
+FIXED_INCOME_DURATION_ESTIMATES: dict[str, float] = {
+    "BND": 6.5,
+    "TLT": 17.0,
+    "IEF": 7.5,
+    "SHY": 1.9,
+    "AGG": 6.2,
+    "TIPS": 7.0,
+    "LQD": 8.5,
+    "HYG": 3.8,
+    "JNK": 3.5,
+    "VCIT": 6.3,
+    "VCSH": 2.8,
+    "MUB": 5.8,
+    "TIP": 6.9,
+    "VGSH": 1.9,
+    "VGIT": 5.2,
+    "VGLT": 16.5,
+    "GOVT": 6.0,
+    "IGIB": 6.5,
+    "IGSB": 2.6,
+    "EMB": 7.2,
+}
 
 
 class PortfolioAnalytics:
@@ -161,6 +190,48 @@ class PortfolioAnalytics:
             observations=int(regression.nobs),
             warnings=warnings,
         )
+
+    def estimate_dv01(self, holdings: list[PortfolioHolding]) -> PortfolioDV01Summary:
+        """
+        Estimate DV01 for fixed-income holdings using a modified-duration approximation.
+
+        DV01 (dollar value of one basis point) measures how much a bond's market
+        value changes for a 1 bp parallel shift in yield:
+
+            DV01 = market_value × modified_duration × 0.0001
+
+        Duration estimates come from a static lookup table of common fixed-income
+        ETFs. Holdings not recognized as fixed-income are skipped.
+        """
+
+        fi_asset_classes = {"Fixed Income ETF", "Credit ETF", "Treasury ETF", "Fixed Income"}
+        results: list[DV01Result] = []
+        warnings: list[str] = []
+
+        for holding in holdings:
+            if holding.asset_class not in fi_asset_classes:
+                continue
+
+            duration = FIXED_INCOME_DURATION_ESTIMATES.get(holding.ticker)
+            if duration is None:
+                warnings.append(
+                    f"No duration estimate available for {holding.ticker}; using default 5.0 years."
+                )
+                duration = 5.0
+
+            mv = holding.market_value
+            dv01 = mv * duration * 0.0001
+            results.append(
+                DV01Result(
+                    ticker=holding.ticker,
+                    market_value=mv,
+                    estimated_duration=duration,
+                    dv01=dv01,
+                )
+            )
+
+        total_dv01 = sum(r.dv01 for r in results)
+        return PortfolioDV01Summary(holdings=results, total_dv01=total_dv01, warnings=warnings)
 
     def _empty_factor_result(self, warnings: list[str]) -> FactorDecompositionResult:
         return FactorDecompositionResult(
