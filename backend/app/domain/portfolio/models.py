@@ -70,6 +70,33 @@ class FactorDecompositionResult:
 
 
 @dataclass(slots=True)
+class DV01Result:
+    """Dollar-value-of-one-basis-point estimate for a fixed-income holding.
+
+    DV01 approximates the dollar change in a bond's price for a 1 bp move
+    in yield using the modified-duration formula:
+
+        DV01 ≈ market_value × modified_duration × 0.0001
+
+    Modified duration is estimated from an assumed coupon rate and maturity.
+    """
+
+    ticker: str
+    market_value: float
+    estimated_duration: float
+    dv01: float
+
+
+@dataclass(slots=True)
+class PortfolioDV01Summary:
+    """Aggregate DV01 for all fixed-income holdings in a portfolio."""
+
+    holdings: list[DV01Result]
+    total_dv01: float
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class PresetPortfolioDefinition:
     """Target-weight definition for a preset portfolio."""
 
