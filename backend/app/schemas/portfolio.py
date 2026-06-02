@@ -69,3 +69,12 @@ class PortfolioDetailResponse(PortfolioResponse):
     """Portfolio with holdings and a nominal analytics summary."""
 
     analytics: PortfolioAnalyticsSummary
+
+
+class PresetPortfolioResponse(BaseModel):
+    """A built-in preset portfolio template (target weights by ticker)."""
+
+    key: str
+    name: str
+    description: str
+    target_weights: dict[str, float]
