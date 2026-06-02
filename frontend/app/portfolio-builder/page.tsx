@@ -16,11 +16,35 @@ interface Row {
   ticker: string;
   quantity: string;
   costBasis: string;
+  sector: string;
 }
 
-const EMPTY_ROW: Row = { ticker: "", quantity: "", costBasis: "" };
+const EMPTY_ROW: Row = { ticker: "", quantity: "", costBasis: "", sector: "" };
 const PRESET_NOTIONAL = 1_000_000;
 const PRESET_PRICE = 100;
+
+// Sector options offered in the builder. Blank = let the backend auto-detect
+// (static lookup -> yfinance); pick one to override for assets that won't classify.
+const SECTORS = [
+  "Technology",
+  "Communication Services",
+  "Consumer Discretionary",
+  "Consumer Staples",
+  "Financials",
+  "Healthcare",
+  "Energy",
+  "Industrials",
+  "Materials",
+  "Real Estate",
+  "Utilities",
+  "Fixed Income",
+  "Broad Market",
+  "International Equity",
+  "Precious Metals",
+  "Defensive Equity",
+  "Equity Hedge",
+  "Other",
+];
 
 export default function PortfolioBuilderPage() {
   const { reload, setSelectedId } = usePortfolios();
@@ -62,6 +86,8 @@ export default function PortfolioBuilderPage() {
         ticker: r.ticker.trim().toUpperCase(),
         quantity: Number(r.quantity),
         cost_basis: r.costBasis ? Number(r.costBasis) : null,
+        // Blank -> omit so the backend auto-resolves the sector.
+        sector: r.sector || null,
       }));
     if (!name.trim()) return setError("Give the portfolio a name.");
     if (!holdings.length) return setError("Add at least one holding with a positive quantity.");
@@ -166,18 +192,21 @@ export default function PortfolioBuilderPage() {
           </label>
 
           <div className="mt-4 space-y-2">
-            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs uppercase tracking-[0.15em] text-steel">
+            <div className="grid grid-cols-[1fr_0.7fr_0.8fr_1.1fr_auto] gap-2 text-xs uppercase tracking-[0.15em] text-steel">
               <span>Ticker</span>
               <span className="inline-flex items-center gap-1">
-                Quantity <InfoTooltip text="Number of shares/units held. Used with cost basis to compute notional weight." />
+                Qty <InfoTooltip text="Number of shares/units held. Used with cost basis to compute notional weight." />
               </span>
               <span className="inline-flex items-center gap-1">
-                Cost basis <InfoTooltip text="Average price paid per unit (optional). Used to weight holdings by notional when present." />
+                Cost <InfoTooltip text="Average price paid per unit (optional). Used to weight holdings by notional when present." />
+              </span>
+              <span className="inline-flex items-center gap-1">
+                Sector <InfoTooltip text="Leave on Auto-detect to classify by ticker (static lookup, then yfinance). Pick a sector to override — useful for assets that won't auto-classify." />
               </span>
               <span />
             </div>
             {rows.map((row, i) => (
-              <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
+              <div key={i} className="grid grid-cols-[1fr_0.7fr_0.8fr_1.1fr_auto] gap-2">
                 <input
                   value={row.ticker}
                   onChange={(e) => updateRow(i, { ticker: e.target.value })}
@@ -198,6 +227,18 @@ export default function PortfolioBuilderPage() {
                   inputMode="decimal"
                   className="rounded-xl border border-ink/15 bg-canvas px-3 py-2 text-sm text-ink focus:border-signal focus:outline-none"
                 />
+                <select
+                  value={row.sector}
+                  onChange={(e) => updateRow(i, { sector: e.target.value })}
+                  className="rounded-xl border border-ink/15 bg-canvas px-2 py-2 text-sm text-ink focus:border-signal focus:outline-none"
+                >
+                  <option value="">Auto-detect</option>
+                  {SECTORS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => setRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))}
