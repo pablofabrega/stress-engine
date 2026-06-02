@@ -51,7 +51,7 @@ class PortfolioLoader:
                 "quantity": frame[lower_columns["quantity"]].astype(float),
                 "cost_basis": frame[lower_columns["cost_basis"]].astype(float)
                 if "cost_basis" in lower_columns
-                else pd.Series([pd.NA] * len(frame), dtype="float64"),
+                else pd.Series([float("nan")] * len(frame), dtype="float64"),
             }
         )
         return self._build_portfolio(name=name, holdings_frame=normalized)
@@ -147,22 +147,23 @@ class PortfolioLoader:
         return pd.read_csv(StringIO(str(csv_source)))
 
     def _aggregate_duplicate_tickers(self, holdings_frame: pd.DataFrame) -> pd.DataFrame:
-        def weighted_cost_basis(group: pd.DataFrame) -> float | None:
-            valid = group.dropna(subset=["cost_basis"])
-            if valid.empty:
-                return None
-            return float((valid["quantity"] * valid["cost_basis"]).sum() / valid["quantity"].sum())
-
-        aggregated = (
+        quantity_agg = (
             holdings_frame.groupby("ticker", as_index=False)
             .agg(quantity=("quantity", "sum"))
-            .merge(
-                holdings_frame.groupby("ticker").apply(weighted_cost_basis, include_groups=False).rename("cost_basis"),
-                on="ticker",
-                how="left",
-            )
         )
-        return aggregated.sort_values("ticker").reset_index(drop=True)
+
+        cost_basis_map: dict[str, float | None] = {}
+        for ticker, group in holdings_frame.groupby("ticker"):
+            valid = group.dropna(subset=["cost_basis"])
+            if valid.empty:
+                cost_basis_map[str(ticker)] = None
+            else:
+                cost_basis_map[str(ticker)] = float(
+                    (valid["quantity"] * valid["cost_basis"]).sum() / valid["quantity"].sum()
+                )
+
+        quantity_agg["cost_basis"] = quantity_agg["ticker"].map(cost_basis_map)
+        return quantity_agg.sort_values("ticker").reset_index(drop=True)
 
     def _resolve_latest_price(self, ticker: str, start_date: date, end_date: date) -> tuple[float | None, str | None]:
         result = self.historical_data_fetcher.fetch(ticker=ticker, start_date=start_date, end_date=end_date)
