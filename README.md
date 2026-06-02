@@ -33,7 +33,8 @@ Phase 1 scaffold is in place:
 1. Copy `.env.example` to `.env`.
 2. Start infrastructure and app containers with `docker compose up --build`.
 3. Run database migrations with `cd backend && alembic upgrade head`.
-4. Open `http://localhost:3000` for the frontend and `http://localhost:8000/docs` for the backend docs.
+4. (Optional) Seed demo data — the four preset portfolios plus pending scenario runs — with `cd backend && python -m app.db.seed`. Add `--sqlite demo.db` to seed a standalone SQLite file without Postgres.
+5. Open `http://localhost:3000` for the frontend and `http://localhost:8000/docs` for the backend docs.
 
 ## Feature List
 
