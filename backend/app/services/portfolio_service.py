@@ -10,9 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models.portfolio import Holding, UserPortfolio
+from app.domain.portfolio.metadata import SecurityMetadataResolver
 from app.schemas.portfolio import HoldingInput, PortfolioAnalyticsSummary
 
 _UNKNOWN_SECTOR = "Unknown"
+
+# Resolves sector / asset class at ingestion (static lookup first, yfinance
+# fallback) so manually-entered holdings are tagged, not left "Unknown".
+_metadata_resolver = SecurityMetadataResolver()
 
 
 def create_portfolio(db: Session, name: str, holdings: Iterable[HoldingInput]) -> UserPortfolio:
@@ -79,6 +84,33 @@ def delete_portfolio(db: Session, portfolio: UserPortfolio) -> None:
     db.commit()
 
 
+def backfill_holding_metadata(db: Session) -> int:
+    """Re-resolve sector/asset class for holdings that are missing or 'Unknown'.
+
+    Holdings created before ingestion-time tagging existed were stored without a
+    sector. This re-runs the metadata resolver for any holding whose sector or
+    asset class is null/"Unknown" and returns the number updated. Explicit,
+    non-"Unknown" tags are left untouched.
+    """
+
+    holdings = db.execute(select(Holding)).scalars().all()
+    updated = 0
+    for holding in holdings:
+        needs = holding.sector in (None, _UNKNOWN_SECTOR) or holding.asset_class in (None, _UNKNOWN_SECTOR)
+        if not needs:
+            continue
+        metadata = _metadata_resolver.resolve(holding.ticker)
+        new_sector = holding.sector if holding.sector not in (None, _UNKNOWN_SECTOR) else metadata.sector
+        new_asset = holding.asset_class if holding.asset_class not in (None, _UNKNOWN_SECTOR) else metadata.asset_class
+        if new_sector != holding.sector or new_asset != holding.asset_class:
+            holding.sector = new_sector
+            holding.asset_class = new_asset
+            updated += 1
+    if updated:
+        db.commit()
+    return updated
+
+
 def nominal_analytics(portfolio: UserPortfolio) -> PortfolioAnalyticsSummary:
     """Compute deterministic nominal weights without any market-data fetch.
 
@@ -108,10 +140,18 @@ def nominal_analytics(portfolio: UserPortfolio) -> PortfolioAnalyticsSummary:
 
 
 def _to_holding(holding: HoldingInput) -> Holding:
+    """Build a Holding, tagging sector/asset class when the caller omitted them."""
+
+    asset_class = holding.asset_class
+    sector = holding.sector
+    if asset_class is None or sector is None:
+        metadata = _metadata_resolver.resolve(holding.ticker)
+        asset_class = asset_class or metadata.asset_class
+        sector = sector or metadata.sector
     return Holding(
         ticker=holding.ticker.upper(),
         quantity=holding.quantity,
         cost_basis=holding.cost_basis,
-        asset_class=holding.asset_class,
-        sector=holding.sector,
+        asset_class=asset_class,
+        sector=sector,
     )
