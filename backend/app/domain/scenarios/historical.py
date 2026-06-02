@@ -198,6 +198,30 @@ class HistoricalScenarioRunner(ScenarioRunner):
         contributors = pd.DataFrame(rows).sort_values("pnl_dollars")
         return contributors.reset_index(drop=True)
 
+    @staticmethod
+    def top_worst_contributors(contributors: pd.DataFrame, n: int = 5) -> pd.DataFrame:
+        """
+        Return the ``n`` holdings with the most negative PnL during the scenario.
+
+        Contributors are sorted ascending by ``pnl_dollars`` so the worst losers appear first.
+        """
+
+        if contributors.empty:
+            return contributors
+        return contributors.sort_values("pnl_dollars").head(n).reset_index(drop=True)
+
+    @staticmethod
+    def top_best_contributors(contributors: pd.DataFrame, n: int = 5) -> pd.DataFrame:
+        """
+        Return the ``n`` holdings with the most positive PnL during the scenario.
+
+        Contributors are sorted descending by ``pnl_dollars`` so the strongest gainers appear first.
+        """
+
+        if contributors.empty:
+            return contributors
+        return contributors.sort_values("pnl_dollars", ascending=False).head(n).reset_index(drop=True)
+
     def _aggregate_contributions(self, contributors: pd.DataFrame, group_field: str) -> pd.DataFrame:
         if contributors.empty:
             return pd.DataFrame()
