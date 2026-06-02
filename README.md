@@ -1,8 +1,14 @@
 # Market Scenario and Stress Testing Workbench
 
-Market Scenario and Stress Testing Workbench is a full-stack portfolio risk application designed to look and behave like a serious institutional decision-support tool. The project combines a FastAPI backend, a Next.js frontend, and a quantitative analytics layer to help a user understand how a portfolio behaves under historical crises and hypothetical macro shocks.
+Market Scenario and Stress Testing Workbench is a full-stack portfolio risk application designed to look and behave like a serious institutional decision-support tool. It combines a FastAPI backend, a Next.js frontend, and a quantitative analytics layer to help a user understand how a portfolio behaves under historical crises and hypothetical macro shocks.
 
-The recruiting goal shapes the engineering choices: each quantitative method is explainable from first principles, the system is modular enough to discuss in interviews, and the product experience emphasizes interpretability rather than black-box outputs. The application is intended to demonstrate sound software design, practical data engineering, and disciplined financial analytics in one cohesive system.
+The recruiting goal shapes the engineering choices: each quantitative method is explainable from first principles, the system is modular enough to discuss in interviews, and the product experience emphasizes interpretability rather than black-box outputs. The application demonstrates sound software design, practical data engineering, and disciplined financial analytics in one cohesive system.
+
+It answers three questions a portfolio manager actually asks:
+
+1. How much would I lose if 2008 or COVID happened again?
+2. What breaks first — and which positions and sectors drive the loss?
+3. What hedges would reduce my downside, and at what cost?
 
 ## Architecture Diagram
 
@@ -10,71 +16,148 @@ The recruiting goal shapes the engineering choices: each quantitative method is 
 flowchart LR
     UI[Next.js Frontend] --> API[FastAPI API]
     API --> PG[(PostgreSQL)]
-    API --> REDIS[(Redis Cache / Broker)]
+    API --> REDIS[(Redis Broker)]
     API --> DATA[Market Data Providers]
-    WORKER[Celery Workers] --> REDIS
-    WORKER --> PG
-    WORKER --> DATA
     API --> ANALYTICS[Scenario + Risk Analytics Engine]
+    WORKER[Celery Worker] --> REDIS
+    WORKER --> PG
     WORKER --> ANALYTICS
+    ANALYTICS --> DATA
+    subgraph Providers
+      DATA --> YF[yfinance]
+      DATA --> POLY[Polygon.io]
+      DATA --> ALP[Alpaca]
+      DATA --> FRED[FRED macro]
+    end
 ```
 
 ## Current Status
 
-Phase 1 scaffold is in place:
+The application is functional end to end:
 
-- Docker-based local development stack
-- Backend service shell with config, logging, database models, Alembic, and Celery bootstrap
-- Frontend app-router shell with page placeholders for all required product surfaces
-- Sample upload artifact and initial documentation structure
+- **Data layer** — `DataProvider` abstraction (yfinance / Polygon / Alpaca) with parquet caching, FRED macro fetcher, vectorized returns/vol/correlation, and a Fama-French loader.
+- **Portfolio engine** — JSON/CSV/preset ingestion, sector & asset-class tagging, nominal analytics, and Fama-French factor decomposition (beta / SMB / HML with t-stats).
+- **Scenario engines** — historical replay (2008, 2020, 2018 Q4, 2022, dot-com) and a hypothetical shock engine (equity, rates, tech, VIX, oil, HY credit, custom), both reachable through the API and executed synchronously or via Celery.
+- **Risk** — historical VaR/CVaR, drawdown & recovery, concentration (HHI, top-N), liquidity-adjusted loss, and an explainable hedge-suggestion engine.
+- **API** — typed Pydantic request/response models for every endpoint; CORS enabled for the frontend.
+- **Frontend** — seven working pages (overview, builder, historical, hypothetical, risk, recommendations, settings) with loading skeletons, error+retry states, and an explainability tooltip on every metric.
+- **Tests** — 235 passing pytest unit/integration tests across analytics, scenario execution, serialization, and the API.
 
 ## Setup Instructions
 
-1. Copy `.env.example` to `.env`.
-2. Start infrastructure and app containers with `docker compose up --build`.
-3. Run database migrations with `cd backend && alembic upgrade head`.
-4. (Optional) Seed demo data — the four preset portfolios plus pending scenario runs — with `cd backend && python -m app.db.seed`. Add `--sqlite demo.db` to seed a standalone SQLite file without Postgres.
-5. Open `http://localhost:3000` for the frontend and `http://localhost:8000/docs` for the backend docs.
+1. Copy `.env.example` to `.env`: `cp .env.example .env`.
+2. Start the stack: `docker compose up --build` (Postgres, Redis, backend, Celery worker, frontend).
+3. Run migrations: `cd backend && alembic upgrade head`.
+4. Seed demo data (four preset portfolios; scenario runs are executed against the configured data provider): `cd backend && python -m app.db.seed`.
+   - Add `--no-execute` to leave runs in the `pending` state, or `--sqlite demo.db` to seed a standalone SQLite file with no Postgres.
+5. Open `http://localhost:3000` (frontend) and `http://localhost:8000/docs` (API docs).
+
+Run the backend tests with `cd backend && pytest`.
+
+### Running pieces without Docker
+
+- Backend: `cd backend && pip install -e . && uvicorn app.main:app --reload`
+- Frontend: `cd frontend && npm install && npm run dev` (set `NEXT_PUBLIC_API_URL=http://localhost:8000`)
+- Scenario execution mode: `SCENARIO_EXECUTION_MODE=sync` (default, runs inline) or `celery` (enqueues to the worker).
 
 ## Feature List
 
-- Portfolio ingestion via manual entry, CSV upload, and preset templates
-- Historical stress replay engine using real market data
-- Hypothetical shock framework with factor-based approximations
-- Liquidity-adjusted risk analysis
-- Explainable hedge suggestions and similar-period lookup
-- Full explainability layer for every displayed metric
+- Portfolio ingestion via manual entry, CSV upload, and one-click preset templates
+- Historical stress replay using real daily returns, with PnL attribution and before/during correlation shifts
+- Hypothetical shock framework (equity, rates, tech, VIX, oil, credit, custom) with factor-based approximations
+- Liquidity-adjusted risk (days-to-liquidate at multiple participation rates, haircut on stressed loss)
+- Explainable hedge suggestions with step-by-step hedge-ratio math and estimated cost
+- Similar historical periods via cosine similarity on a macro feature vector
+- Full explainability layer: every displayed metric has a what/how/why tooltip
 
 ## Data Sources and Licensing Notes
 
 - Primary market data provider abstraction targets Polygon.io or Alpaca
-- Macro series are sourced from FRED
+- Macro series are sourced from FRED (rates, VIX, credit spreads, yield curve, USD index)
 - `yfinance` is supported as a development fallback behind the provider interface
-- Users should review provider licensing terms before production or public deployment
+- Fama-French factors come from the Ken French data library
+- Review each provider's licensing terms before production or public deployment. All credentials are supplied via environment variables; none are committed.
 
 ## Design Tradeoffs and Limitations
 
-- Phase 1 focuses on durable scaffolding and interfaces rather than analytics depth
-- PostgreSQL and Redis are required in the intended local/dev environment
-- Some pages and endpoints are placeholders until later modules are implemented
+- **Instantaneous shocks are approximations.** Equity shocks scale by market beta, rate shocks by duration / rate sensitivity, and cross-sector spillovers use historical correlations. These are transparent first-order estimates, not full revaluation.
+- **Simulated drawdown paths are illustrative**, scaling the instantaneous shock by historical volatility — they are not Monte Carlo simulations.
+- **Historical replay assumes no rebalancing** inside the scenario window and shocks current notionals through realized returns.
+- **Transaction costs and slippage are simplified**; the liquidity haircut is a parameterized proxy, not an execution model.
+- Postgres and Redis are expected in the intended local/dev environment; a SQLite seed path exists for quick demos.
 
 ## Future Work
 
-- Build the provider abstraction and parquet-backed caching layer
-- Implement portfolio analytics, scenario engines, and recommendations
-- Add seeded demo results, richer testing, and polished interaction flows
+- Full portfolio revaluation under shocks (option-aware, non-linear) instead of first-order factor approximations
+- Monte Carlo and parametric VaR alongside the current historical VaR
+- Persisted scenario-run history and comparison views in the UI
+- Playwright end-to-end tests for the key frontend flows
+- Authentication and multi-user portfolios
 
 ## How to talk about this project in SWE, quant, and consulting interviews
 
 ### SWE version
 
-Emphasize the provider abstraction, the FastAPI service boundaries, the Alembic-backed schema evolution, the Celery task queue for long-running runs, and the split between API orchestration and analytics modules.
+Emphasize the `DataProvider` abstraction (swap yfinance/Polygon/Alpaca via one env var), the clean domain → service → API layering with typed Pydantic contracts, parquet caching, the dual synchronous/Celery scenario-execution path sharing one executor, structured logging, and a 235-test suite. The result serializer that flattens pandas/numpy into JSON-safe payloads is a good "boundary design" talking point.
 
 ### Quant version
 
-Emphasize the factor decomposition framework, the historical replay engine, the liquidity-adjusted loss logic, the hedge ratio calculations, and the discipline of using real historical data rather than synthetic scenarios.
+Emphasize the Fama-French factor decomposition (beta/SMB/HML with t-stats and R²), historical VaR/CVaR from the empirical distribution, Ledoit-style well-conditioned covariance handling, the duration/DV01 rate repricing, liquidity-adjusted loss, the hedge-ratio derivations, and the correlation-breakdown analysis (before vs during a crisis). Stress everything uses **real** historical data — no synthetic generation.
 
 ### Consulting version
 
-Emphasize the decision-support framing, the explainability layer for every risk metric, the recommendation engine rationale, and the way the product translates technical portfolio risk into actionable management guidance.
+Emphasize the decision-support framing around the three core user questions, the recommendation engine that ties each hedge to a specific, cited portfolio weakness, and the explainability layer that translates technical risk metrics into plain-English guidance a non-quant stakeholder can act on.
 
+## Resume Bullet Suggestions
+
+**SWE**
+- Built a full-stack portfolio stress-testing platform (FastAPI + Next.js/TypeScript + PostgreSQL + Celery) with a swappable market-data provider abstraction and parquet caching, covered by 235 automated tests.
+- Designed a domain/service/API architecture with fully typed Pydantic contracts and a shared scenario executor running either synchronously in-request or asynchronously on a Celery worker.
+- Implemented a serialization boundary converting pandas/numpy analytics output into JSON-safe payloads consumed by a React frontend with loading, error-retry, and explainability states throughout.
+
+**Quant**
+- Implemented historical VaR/CVaR, drawdown, concentration, and Fama-French factor decomposition (market/SMB/HML betas with t-stats) over real daily returns, validated with deterministic unit tests.
+- Built historical crisis-replay and hypothetical shock engines applying beta-, duration-, and sector-correlation-based factor sensitivities, with liquidity-adjusted loss estimates and before/during correlation-breakdown analysis.
+- Developed an explainable hedge-suggestion engine deriving hedge ratios from portfolio exposures and estimating historical effectiveness against the relevant stress window.
+
+**Consulting**
+- Delivered an institutional-style decision-support tool answering three concrete portfolio questions, translating quantitative risk into plain-English recommendations with cited rationale.
+- Engineered an explainability layer pairing every risk metric with a what/how/why explanation so non-technical stakeholders can interpret and act on the analytics.
+- Framed scenario outputs as actionable guidance (which positions drive losses, which hedges reduce downside and at what cost) rather than raw numbers.
+
+## Repository Structure
+
+```
+stress-engine/
+├── AGENTS.md                      # build specification
+├── README.md
+├── docker-compose.yml             # postgres, redis, backend, worker, frontend
+├── Makefile
+├── .env.example
+├── docs/
+│   └── demo-script.md             # 3–5 minute walkthrough
+├── sample-data/
+│   └── sample_portfolio.csv
+├── backend/
+│   ├── Dockerfile  pyproject.toml  pytest.ini  alembic.ini
+│   ├── alembic/                   # migrations (0001_initial_schema)
+│   └── app/
+│       ├── main.py                # FastAPI app + CORS
+│       ├── api/                   # routes + deps (health, portfolios, scenarios, scenario-runs, similar-periods)
+│       ├── core/                  # config, logging
+│       ├── db/                    # SQLAlchemy models, session, seed
+│       ├── domain/
+│       │   ├── data/              # DataProvider impls, cache, FRED, Fama-French, returns
+│       │   ├── portfolio/         # loader, analytics, metadata, presets
+│       │   ├── risk/              # VaR/CVaR, liquidity, hedges, similar-periods
+│       │   └── scenarios/         # historical replay + hypothetical shock engines
+│       ├── schemas/               # Pydantic request/response models
+│       ├── services/              # orchestration: portfolio, scenario, executor, serialization, analytics
+│       └── workers/               # celery app + scenario task
+│       └── tests/                 # 235 pytest tests
+└── frontend/
+    ├── Dockerfile  package.json  next.config.ts  tailwind.config.ts  tsconfig.json
+    ├── app/                       # 7 pages + home + layout
+    ├── components/                # charts, layout, portfolio context, ui primitives
+    └── lib/                       # typed API client, types, formatters, useApi hook
+```

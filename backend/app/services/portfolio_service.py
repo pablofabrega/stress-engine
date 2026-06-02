@@ -38,6 +38,17 @@ def get_portfolio(db: Session, portfolio_id: uuid.UUID) -> UserPortfolio | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+def list_portfolios(db: Session) -> list[UserPortfolio]:
+    """Return all portfolios (with holdings) ordered by creation time."""
+
+    stmt = (
+        select(UserPortfolio)
+        .options(selectinload(UserPortfolio.holdings))
+        .order_by(UserPortfolio.created_at)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def upsert_holdings(db: Session, portfolio: UserPortfolio, holdings: Iterable[HoldingInput]) -> UserPortfolio:
     """Add new holdings or update existing ones (matched case-insensitively by ticker)."""
 

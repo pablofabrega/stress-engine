@@ -13,6 +13,7 @@ from app.api.deps import (
     get_risk_analytics,
 )
 from app.domain.portfolio.loader import PortfolioLoader
+from app.domain.portfolio.presets import get_preset_portfolios
 from app.domain.risk.analytics import RiskAnalytics
 from app.domain.risk.hedges import HedgeSuggestionEngine
 from app.schemas.common import MessageResponse
@@ -21,6 +22,7 @@ from app.schemas.portfolio import (
     PortfolioCreateRequest,
     PortfolioDetailResponse,
     PortfolioResponse,
+    PresetPortfolioResponse,
 )
 from app.schemas.recommendation import RecommendationsResponse
 from app.schemas.risk import RiskSnapshotResponse
@@ -36,10 +38,30 @@ def _get_or_404(db: Session, portfolio_id: uuid.UUID):
     return portfolio
 
 
+@router.get("", response_model=list[PortfolioResponse])
+def list_portfolios(db: Session = Depends(get_db)) -> list[PortfolioResponse]:
+    return [PortfolioResponse.model_validate(p) for p in portfolio_service.list_portfolios(db)]
+
+
 @router.post("", response_model=PortfolioResponse, status_code=status.HTTP_201_CREATED)
 def create_portfolio(request: PortfolioCreateRequest, db: Session = Depends(get_db)) -> PortfolioResponse:
     portfolio = portfolio_service.create_portfolio(db, name=request.name, holdings=request.holdings)
     return PortfolioResponse.model_validate(portfolio)
+
+
+@router.get("/presets", response_model=list[PresetPortfolioResponse])
+def list_preset_portfolios() -> list[PresetPortfolioResponse]:
+    """Built-in portfolio templates the builder can instantiate in one click."""
+
+    return [
+        PresetPortfolioResponse(
+            key=preset.key,
+            name=preset.name,
+            description=preset.description,
+            target_weights=preset.target_weights,
+        )
+        for preset in get_preset_portfolios()
+    ]
 
 
 @router.get("/{portfolio_id}", response_model=PortfolioDetailResponse)
