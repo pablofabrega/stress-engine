@@ -17,6 +17,8 @@ from app.domain.portfolio.loader import PortfolioLoader
 from app.domain.risk.analytics import RiskAnalytics
 from app.domain.risk.hedges import HedgeSuggestionEngine
 from app.domain.risk.similar_periods import SimilarPeriodsFinder
+from app.domain.scenarios.historical import HistoricalScenarioRunner
+from app.domain.scenarios.hypothetical import HypotheticalScenarioRunner
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -47,3 +49,15 @@ def get_similar_periods_finder() -> SimilarPeriodsFinder:
     """Provide the similar-periods finder."""
 
     return SimilarPeriodsFinder()
+
+
+def get_historical_runner() -> HistoricalScenarioRunner:
+    """Provide the historical scenario replay engine."""
+
+    return HistoricalScenarioRunner()
+
+
+def get_hypothetical_runner() -> HypotheticalScenarioRunner:
+    """Provide the hypothetical shock engine."""
+
+    return HypotheticalScenarioRunner()
