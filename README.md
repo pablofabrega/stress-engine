@@ -102,7 +102,7 @@ Emphasize the `DataProvider` abstraction (swap yfinance/Polygon/Alpaca via one e
 
 ### Quant version
 
-Emphasize the Fama-French factor decomposition (beta/SMB/HML with t-stats and R²), historical VaR/CVaR from the empirical distribution, Ledoit-style well-conditioned covariance handling, the duration/DV01 rate repricing, liquidity-adjusted loss, the hedge-ratio derivations, and the correlation-breakdown analysis (before vs during a crisis). Stress everything uses **real** historical data — no synthetic generation.
+Emphasize the Fama-French factor decomposition (beta/SMB/HML with t-stats and R²), historical VaR/CVaR from the empirical distribution, Ledoit-style well-conditioned covariance handling, the duration/DV01 rate repricing, liquidity-adjusted loss, the hedge-ratio derivations, and the correlation-breakdown analysis (before vs during a crisis). Stress everything uses **real** historical data, no synthetic generation.
 
 ### Consulting version
 
