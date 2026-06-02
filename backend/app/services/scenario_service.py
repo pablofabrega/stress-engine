@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.scenario import ScenarioDefinition, ScenarioRun
-from app.domain.scenarios.presets import HISTORICAL_SCENARIOS
+from app.domain.scenarios.presets import HISTORICAL_SCENARIOS, HYPOTHETICAL_SCENARIOS
 from app.schemas.scenario import ScenarioCreateRequest, ScenarioDefinitionResponse
 
 
@@ -27,6 +27,17 @@ def list_scenarios(db: Session) -> list[ScenarioDefinitionResponse]:
             description=preset.description,
         )
         for preset in HISTORICAL_SCENARIOS.values()
+    ]
+    presets += [
+        ScenarioDefinitionResponse(
+            id=preset.key,
+            name=preset.name,
+            type="hypothetical",
+            parameters={"key": preset.key, "scenario_type": preset.scenario_type, **preset.parameters},
+            source="preset",
+            description=preset.description,
+        )
+        for preset in HYPOTHETICAL_SCENARIOS.values()
     ]
 
     custom_rows = db.execute(select(ScenarioDefinition).order_by(ScenarioDefinition.created_at)).scalars().all()
@@ -75,10 +86,9 @@ def resolve_scenario(db: Session, scenario_id: str) -> ScenarioDefinition | None
         if existing is not None:
             return existing
 
-    preset = HISTORICAL_SCENARIOS.get(scenario_id)
-    if preset is None:
-        return None
-    return _materialize_preset(db, scenario_id)
+    if scenario_id in HISTORICAL_SCENARIOS or scenario_id in HYPOTHETICAL_SCENARIOS:
+        return _materialize_preset(db, scenario_id)
+    return None
 
 
 def create_run(db: Session, portfolio_id: uuid.UUID, scenario: ScenarioDefinition) -> ScenarioRun:
@@ -98,9 +108,24 @@ def get_run(db: Session, run_id: uuid.UUID) -> ScenarioRun | None:
 
 
 def _materialize_preset(db: Session, preset_key: str) -> ScenarioDefinition:
-    preset = HISTORICAL_SCENARIOS[preset_key]
+    """Persist a preset (historical or hypothetical) so runs can FK to a real row."""
+
+    if preset_key in HISTORICAL_SCENARIOS:
+        preset = HISTORICAL_SCENARIOS[preset_key]
+        scenario_type = "historical"
+        parameters: dict = {"key": preset.key}
+        start_date = preset.start_date
+        end_date = preset.end_date
+    else:
+        hypo = HYPOTHETICAL_SCENARIOS[preset_key]
+        scenario_type = "hypothetical"
+        parameters = {"key": hypo.key, "scenario_type": hypo.scenario_type, **hypo.parameters}
+        start_date = None
+        end_date = None
+        preset = hypo
+
     stmt = select(ScenarioDefinition).where(
-        ScenarioDefinition.type == "historical",
+        ScenarioDefinition.type == scenario_type,
         ScenarioDefinition.name == preset.name,
     )
     existing = db.execute(stmt).scalars().first()
@@ -109,10 +134,10 @@ def _materialize_preset(db: Session, preset_key: str) -> ScenarioDefinition:
 
     scenario = ScenarioDefinition(
         name=preset.name,
-        type="historical",
-        parameters={"key": preset.key},
-        start_date=preset.start_date,
-        end_date=preset.end_date,
+        type=scenario_type,
+        parameters=parameters,
+        start_date=start_date,
+        end_date=end_date,
     )
     db.add(scenario)
     db.commit()

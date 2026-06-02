@@ -15,10 +15,11 @@ By default it seeds against the configured ``DATABASE_URL``. Pass ``--sqlite
 PATH`` to seed a standalone SQLite file instead (handy for a local, no-Postgres
 demo); the schema is created automatically in that case.
 
-Note on scenario *results*: runs are seeded in the ``pending`` state. Producing
-real results requires executing the scenario engines against live market data,
-which is handled by the Celery worker (build-sequence step 12). We intentionally
-do not fabricate result numbers, since all scenario analysis must use real data.
+Note on scenario *results*: by default the seeded runs are executed immediately
+against the configured market-data provider so the demo opens with real results
+(pass ``--no-execute`` to leave them ``pending``). We never fabricate result
+numbers; if data is unavailable a run is recorded as ``failed`` with the error,
+rather than filled with synthetic values.
 """
 
 from __future__ import annotations
@@ -30,12 +31,15 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
 from app.db.models import UserPortfolio  # noqa: F401  (ensures metadata is populated)
-from app.db.models.scenario import ScenarioRun
+from app.db.models.scenario import ScenarioDefinition, ScenarioRun
 from app.db.session import SessionLocal
+from app.domain.portfolio.loader import PortfolioLoader
 from app.domain.portfolio.metadata import STATIC_SECURITY_METADATA
 from app.domain.portfolio.presets import get_preset_portfolios
+from app.domain.scenarios.historical import HistoricalScenarioRunner
+from app.domain.scenarios.hypothetical import HypotheticalScenarioRunner
 from app.schemas.portfolio import HoldingInput
-from app.services import portfolio_service, scenario_service
+from app.services import portfolio_service, scenario_executor, scenario_service
 
 # Total notional each preset portfolio is scaled to, and an assumed flat share
 # price used only to turn target weights into share quantities. Because notional
@@ -120,14 +124,47 @@ def seed_scenario_runs(
     return runs
 
 
-def seed(db: Session) -> None:
+def execute_pending_runs(db: Session) -> int:
+    """Execute every ``pending`` scenario run against the real engines.
+
+    Errors are captured onto the run record (status ``failed``) by the executor,
+    so a missing data provider degrades gracefully instead of aborting the seed.
+    """
+
+    loader = PortfolioLoader()
+    historical_runner = HistoricalScenarioRunner()
+    hypothetical_runner = HypotheticalScenarioRunner()
+
+    pending = db.execute(select(ScenarioRun).where(ScenarioRun.status == "pending")).scalars().all()
+    for run in pending:
+        scenario = db.get(ScenarioDefinition, run.scenario_id)
+        if scenario is None:
+            continue
+        scenario_executor.execute_run(
+            db,
+            run,
+            scenario,
+            loader=loader,
+            historical_runner=historical_runner,
+            hypothetical_runner=hypothetical_runner,
+        )
+        print(f"  executed run {run.id}: {run.status}")
+    return len(pending)
+
+
+def seed(db: Session, execute: bool = True) -> None:
     """Run the full seed routine."""
 
     print("Seeding preset portfolios...")
     portfolios = seed_portfolios(db)
     print("Seeding scenario runs...")
     runs = seed_scenario_runs(db, portfolios)
-    print(f"Done: {len(portfolios)} portfolios present, {len(runs)} new pending runs created.")
+    executed = 0
+    if execute:
+        print("Executing pending scenario runs (real market data)...")
+        executed = execute_pending_runs(db)
+    state = f"{executed} runs executed" if execute else f"{len(runs)} new pending runs created"
+    print(f"Done: {len(portfolios)} portfolios present, {state}.")
 
 
 def _session_factory(sqlite_path: str | None) -> sessionmaker[Session]:
@@ -146,12 +183,19 @@ def main() -> None:
         default=None,
         help="Seed a standalone SQLite file at PATH (schema auto-created) instead of DATABASE_URL.",
     )
+    parser.add_argument(
+        "--no-execute",
+        dest="execute",
+        action="store_false",
+        help="Leave scenario runs in the 'pending' state instead of executing them.",
+    )
+    parser.set_defaults(execute=True)
     args = parser.parse_args()
 
     factory = _session_factory(args.sqlite)
     db = factory()
     try:
-        seed(db)
+        seed(db, execute=args.execute)
     finally:
         db.close()
 

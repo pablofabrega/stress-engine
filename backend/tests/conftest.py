@@ -14,6 +14,8 @@ import app.db.models  # noqa: F401  (register tables on Base.metadata)
 from app.api.deps import (
     get_db,
     get_hedge_engine,
+    get_historical_runner,
+    get_hypothetical_runner,
     get_portfolio_loader,
     get_risk_analytics,
     get_similar_periods_finder,
@@ -92,6 +94,8 @@ def override_analytics():
         "risk_analytics": get_risk_analytics,
         "hedge_engine": get_hedge_engine,
         "similar_periods_finder": get_similar_periods_finder,
+        "historical_runner": get_historical_runner,
+        "hypothetical_runner": get_hypothetical_runner,
     }
 
     def _install(**fakes: object) -> None:

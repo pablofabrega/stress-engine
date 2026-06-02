@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     celery_broker_url: str = Field(default="redis://localhost:6379/0", alias="CELERY_BROKER_URL")
     celery_result_backend: str = Field(default="redis://localhost:6379/1", alias="CELERY_RESULT_BACKEND")
 
+    # "sync" runs the scenario engine inline in the request (works out of the box,
+    # ideal for the demo); "celery" enqueues a background task for a worker.
+    scenario_execution_mode: str = Field(default="sync", alias="SCENARIO_EXECUTION_MODE")
+
     data_provider: str = Field(default="yfinance", alias="DATA_PROVIDER")
     data_cache_dir: str = Field(default="data/cache", alias="DATA_CACHE_DIR")
     data_stale_after_hours: int = Field(default=24, alias="DATA_STALE_AFTER_HOURS")
