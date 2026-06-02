@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from app.domain.data.cache import CacheDescriptor, LocalParquetCache
 

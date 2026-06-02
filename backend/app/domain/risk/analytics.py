@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from datetime import date
 
-import numpy as np
 import pandas as pd
 
 from app.domain.data.returns import ReturnsCalculator
 from app.domain.portfolio.analytics import PortfolioAnalytics
-from app.domain.portfolio.models import FactorDecompositionResult, PortfolioHolding, PortfolioReturnHistory
+from app.domain.portfolio.models import FactorDecompositionResult, PortfolioHolding
 from app.domain.risk.models import ConcentrationMetrics, DrawdownSummary, RiskAnalyticsResult
 
 
