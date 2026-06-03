@@ -2,8 +2,6 @@
 
 Market Scenario and Stress Testing Workbench is a full-stack portfolio risk application designed to look and behave like a serious institutional decision-support tool. It combines a FastAPI backend, a Next.js frontend, and a quantitative analytics layer to help a user understand how a portfolio behaves under historical crises and hypothetical macro shocks.
 
-The recruiting goal shapes the engineering choices: each quantitative method is explainable from first principles, the system is modular enough to discuss in interviews, and the product experience emphasizes interpretability rather than black-box outputs. The application demonstrates sound software design, practical data engineering, and disciplined financial analytics in one cohesive system.
-
 It answers three questions a portfolio manager actually asks:
 
 1. How much would I lose if 2008 or COVID happened again?
