@@ -94,37 +94,6 @@ Run the backend tests with `cd backend && pytest`.
 - Playwright end-to-end tests for the key frontend flows
 - Authentication and multi-user portfolios
 
-## How to talk about this project in SWE, quant, and consulting interviews
-
-### SWE version
-
-Emphasize the `DataProvider` abstraction (swap yfinance/Polygon/Alpaca via one env var), the clean domain → service → API layering with typed Pydantic contracts, parquet caching, the dual synchronous/Celery scenario-execution path sharing one executor, structured logging, and a 235-test suite. The result serializer that flattens pandas/numpy into JSON-safe payloads is a good "boundary design" talking point.
-
-### Quant version
-
-Emphasize the Fama-French factor decomposition (beta/SMB/HML with t-stats and R²), historical VaR/CVaR from the empirical distribution, Ledoit-style well-conditioned covariance handling, the duration/DV01 rate repricing, liquidity-adjusted loss, the hedge-ratio derivations, and the correlation-breakdown analysis (before vs during a crisis). Stress everything uses **real** historical data, no synthetic generation.
-
-### Consulting version
-
-Emphasize the decision-support framing around the three core user questions, the recommendation engine that ties each hedge to a specific, cited portfolio weakness, and the explainability layer that translates technical risk metrics into plain-English guidance a non-quant stakeholder can act on.
-
-## Resume Bullet Suggestions
-
-**SWE**
-- Built a full-stack portfolio stress-testing platform (FastAPI + Next.js/TypeScript + PostgreSQL + Celery) with a swappable market-data provider abstraction and parquet caching, covered by 235 automated tests.
-- Designed a domain/service/API architecture with fully typed Pydantic contracts and a shared scenario executor running either synchronously in-request or asynchronously on a Celery worker.
-- Implemented a serialization boundary converting pandas/numpy analytics output into JSON-safe payloads consumed by a React frontend with loading, error-retry, and explainability states throughout.
-
-**Quant**
-- Implemented historical VaR/CVaR, drawdown, concentration, and Fama-French factor decomposition (market/SMB/HML betas with t-stats) over real daily returns, validated with deterministic unit tests.
-- Built historical crisis-replay and hypothetical shock engines applying beta-, duration-, and sector-correlation-based factor sensitivities, with liquidity-adjusted loss estimates and before/during correlation-breakdown analysis.
-- Developed an explainable hedge-suggestion engine deriving hedge ratios from portfolio exposures and estimating historical effectiveness against the relevant stress window.
-
-**Consulting**
-- Delivered an institutional-style decision-support tool answering three concrete portfolio questions, translating quantitative risk into plain-English recommendations with cited rationale.
-- Engineered an explainability layer pairing every risk metric with a what/how/why explanation so non-technical stakeholders can interpret and act on the analytics.
-- Framed scenario outputs as actionable guidance (which positions drive losses, which hedges reduce downside and at what cost) rather than raw numbers.
-
 ## Repository Structure
 
 ```
