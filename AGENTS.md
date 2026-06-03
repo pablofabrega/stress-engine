@@ -13,9 +13,6 @@ Market Scenario and Stress Testing Workbench
 ## Goal
 A full-stack web application where a user inputs a portfolio, runs historical and hypothetical stress scenarios using real market data, analyzes portfolio losses and exposures, views hedge suggestions, and understands the drivers of risk. This should feel like a serious institutional-style decision-support tool, not a toy demo.
 
-## Recruiting context
-This project is built by a CS student recruiting for new-grad SWE, quant, and consulting roles. The code will be shown in interviews. Prioritize correctness, interpretability, and engineering quality over complexity. Every quant method used must be explainable from first principles.
-
 ## Non-negotiable requirements
 - All scenario analysis must use real historical price data — no synthetic generation
 - Build a working end-to-end app: backend, frontend, analytics engine, documentation
@@ -307,11 +304,6 @@ README must include:
 - Design tradeoffs and limitations
 - Future work section
 
-Include a section titled exactly: "How to talk about this project in SWE, quant, and consulting interviews"
-- SWE version: emphasize the provider abstraction, async task queue, data pipeline, API design
-- Quant version: emphasize the factor decomposition, liquidity-adjusted risk, hedge ratio calculations, scenario framework
-- Consulting version: emphasize the decision-support framing, the recommendation engine rationale, the explainability layer
-
 ---
 
 ## Deliverables
@@ -324,7 +316,6 @@ Include a section titled exactly: "How to talk about this project in SWE, quant,
 - Seeded demo data: three preset portfolios with pre-run scenario results
 - README with architecture diagram
 - Demo script: 3–5 minute walkthrough narrative
-- Resume bullet suggestions (3 bullets for each of SWE, quant, consulting)
 - Repo tree at end
 
 ---
