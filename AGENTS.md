@@ -338,6 +338,6 @@ README must include:
 14. Explainability tooltips throughout
 15. Recommendations page
 16. Polish: loading states, error states, data status page
-17. Tests, README, demo script, resume bullets
+17. Tests, README, demo script
 
-Start by generating the complete repo scaffold and docker-compose. Then implement modules in sequence. Do not skip the unit tests for the analytics module — they will be shown in interviews.
+Start by generating the complete repo scaffold and docker-compose. Then implement modules in sequence. Do not skip the unit tests for the analytics module — they are a core deliverable.

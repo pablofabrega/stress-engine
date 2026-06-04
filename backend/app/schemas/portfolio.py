@@ -29,6 +29,12 @@ class HoldingsUpdateRequest(BaseModel):
     holdings: list[HoldingInput] = Field(min_length=1)
 
 
+class PortfolioRenameRequest(BaseModel):
+    """Request body for renaming a portfolio."""
+
+    name: str = Field(min_length=1, max_length=255)
+
+
 class HoldingResponse(BaseModel):
     """Serialized holding as stored in the database."""
 
@@ -62,6 +68,7 @@ class PortfolioResponse(BaseModel):
     id: uuid.UUID
     name: str
     created_at: datetime
+    is_template: bool = False
     holdings: list[HoldingResponse]
 
 

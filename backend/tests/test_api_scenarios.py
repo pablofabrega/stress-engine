@@ -172,6 +172,29 @@ def test_create_scenario_rejects_invalid_type(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_materialized_preset_is_not_listed_twice(client: TestClient, override_analytics) -> None:
+    """Running a preset materializes a definition row; it must not double-list.
+
+    The run creates a ScenarioDefinition row so the FK is valid. That row is a
+    preset (carries parameters["key"]) and must be filtered from the listing so
+    the preset still appears exactly once, under its canonical key id.
+    """
+
+    override_analytics(loader=FakeLoader(), historical_runner=FakeHistoricalRunner())
+    portfolio_id = _create_portfolio(client)
+
+    run = client.post("/api/v1/scenario-runs", json={"portfolio_id": portfolio_id, "scenario_id": "2008-gfc"})
+    assert run.status_code == 202
+
+    scenarios = client.get("/api/v1/scenarios").json()
+    gfc = [s for s in scenarios if s["name"] == "2008 Global Financial Crisis"]
+    assert len(gfc) == 1
+    assert gfc[0]["id"] == "2008-gfc"
+    assert gfc[0]["source"] == "preset"
+    # No custom row should leak in for the materialized preset.
+    assert not any(s["source"] == "custom" and s["name"] == "2008 Global Financial Crisis" for s in scenarios)
+
+
 def test_scenario_run_executes_preset_synchronously(client: TestClient, override_analytics) -> None:
     override_analytics(loader=FakeLoader(), historical_runner=FakeHistoricalRunner())
     portfolio_id = _create_portfolio(client)

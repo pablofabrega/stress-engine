@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -14,6 +14,9 @@ class UserPortfolio(Base):
     id: Mapped[uuid.UUID] = mapped_column(uuid_column_type(), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # Read-only starter portfolios (the seeded presets). The UI surfaces a
+    # "Duplicate to edit" action instead of inline editing for these.
+    is_template: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
     holdings: Mapped[list["Holding"]] = relationship(back_populates="portfolio", cascade="all, delete-orphan")
 

@@ -20,6 +20,18 @@ venv/
 
 # Data cache (parquet) and local artifacts
 backend/data/cache/
+/data/
+
+# Docker bind-mount volumes
+postgres-data/
+redis-data/
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+*.tsbuildinfo
 
 # OS / editor
 .DS_Store

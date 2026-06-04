@@ -5,11 +5,12 @@ import { useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { usePortfolios } from "@/components/portfolio/portfolio-context";
+import { PortfolioEditor } from "@/components/portfolio/portfolio-editor";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { BarList, type BarRow } from "@/components/ui/bars";
 import { ErrorState, Spinner } from "@/components/ui/states";
 import { InfoTooltip } from "@/components/ui/tooltip";
-import { pct } from "@/lib/format";
+import { pct, SECTORS } from "@/lib/format";
 import type { HoldingInput, PresetPortfolio } from "@/lib/types";
 
 interface Row {
@@ -22,29 +23,6 @@ interface Row {
 const EMPTY_ROW: Row = { ticker: "", quantity: "", costBasis: "", sector: "" };
 const PRESET_NOTIONAL = 1_000_000;
 const PRESET_PRICE = 100;
-
-// Sector options offered in the builder. Blank = let the backend auto-detect
-// (static lookup -> yfinance); pick one to override for assets that won't classify.
-const SECTORS = [
-  "Technology",
-  "Communication Services",
-  "Consumer Discretionary",
-  "Consumer Staples",
-  "Financials",
-  "Healthcare",
-  "Energy",
-  "Industrials",
-  "Materials",
-  "Real Estate",
-  "Utilities",
-  "Fixed Income",
-  "Broad Market",
-  "International Equity",
-  "Precious Metals",
-  "Defensive Equity",
-  "Equity Hedge",
-  "Other",
-];
 
 export default function PortfolioBuilderPage() {
   const { reload, setSelectedId } = usePortfolios();
@@ -320,6 +298,17 @@ export default function PortfolioBuilderPage() {
               ))}
             </div>
           </Card>
+        </div>
+      </div>
+
+      <div className="border-t border-ink/10 pt-8">
+        <SectionTitle
+          eyebrow="Manage"
+          title="Edit the active portfolio"
+          description="Rename, adjust holdings, or duplicate the selected portfolio. Preset templates are read-only — duplicate one to create an editable copy."
+        />
+        <div className="mt-6">
+          <PortfolioEditor />
         </div>
       </div>
     </div>

@@ -67,6 +67,11 @@ export const api = {
     request<Portfolio>("/portfolios", { method: "POST", body: JSON.stringify({ name, holdings }) }),
   updateHoldings: (id: string, holdings: HoldingInput[]) =>
     request<Portfolio>(`/portfolios/${id}/holdings`, { method: "POST", body: JSON.stringify({ holdings }) }),
+  renamePortfolio: (id: string, name: string) =>
+    request<Portfolio>(`/portfolios/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  duplicatePortfolio: (id: string) => request<Portfolio>(`/portfolios/${id}/duplicate`, { method: "POST" }),
+  deleteHolding: (id: string, ticker: string) =>
+    request<Portfolio>(`/portfolios/${id}/holdings/${encodeURIComponent(ticker)}`, { method: "DELETE" }),
   deletePortfolio: (id: string) => request<{ detail: string }>(`/portfolios/${id}`, { method: "DELETE" }),
 
   // Risk + recommendations

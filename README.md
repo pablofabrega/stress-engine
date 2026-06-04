@@ -39,7 +39,7 @@ The application is functional end to end:
 - **Risk** — historical VaR/CVaR, drawdown & recovery, concentration (HHI, top-N), liquidity-adjusted loss, and an explainable hedge-suggestion engine.
 - **API** — typed Pydantic request/response models for every endpoint; CORS enabled for the frontend.
 - **Frontend** — seven working pages (overview, builder, historical, hypothetical, risk, recommendations, settings) with loading skeletons, error+retry states, and an explainability tooltip on every metric.
-- **Tests** — 235 passing pytest unit/integration tests across analytics, scenario execution, serialization, and the API.
+- **Tests** — 250 passing pytest unit/integration tests across analytics, scenario execution, serialization, and the API.
 
 ## Setup Instructions
 
@@ -121,7 +121,7 @@ stress-engine/
 │       ├── schemas/               # Pydantic request/response models
 │       ├── services/              # orchestration: portfolio, scenario, executor, serialization, analytics
 │       └── workers/               # celery app + scenario task
-│       └── tests/                 # 235 pytest tests
+│       └── tests/                 # 250 pytest tests
 └── frontend/
     ├── Dockerfile  package.json  next.config.ts  tailwind.config.ts  tsconfig.json
     ├── app/                       # 7 pages + home + layout

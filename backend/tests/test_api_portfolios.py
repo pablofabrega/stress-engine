@@ -3,6 +3,29 @@ from __future__ import annotations
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.schemas.portfolio import HoldingInput
+from app.services import portfolio_service
+
+
+def _create_template(db_session: Session) -> str:
+    """Insert a read-only template directly (no API endpoint sets is_template).
+
+    Sectors/asset classes are supplied so ingestion skips the network metadata
+    resolver, keeping the test offline and deterministic.
+    """
+
+    portfolio = portfolio_service.create_portfolio(
+        db_session,
+        name="Preset Template",
+        holdings=[
+            HoldingInput(ticker="AAPL", quantity=10, cost_basis=100.0, sector="Technology", asset_class="Equity"),
+            HoldingInput(ticker="MSFT", quantity=5, cost_basis=200.0, sector="Technology", asset_class="Equity"),
+        ],
+        is_template=True,
+    )
+    return str(portfolio.id)
 
 
 def _create(client: TestClient, **overrides) -> dict:
@@ -99,3 +122,64 @@ def test_delete_portfolio_removes_it(client: TestClient) -> None:
 
 def test_delete_unknown_portfolio_returns_404(client: TestClient) -> None:
     assert client.delete(f"/api/v1/portfolios/{uuid.uuid4()}").status_code == 404
+
+
+def test_created_portfolio_is_not_template(client: TestClient) -> None:
+    created = _create(client)
+    assert created["is_template"] is False
+
+
+def test_rename_portfolio(client: TestClient) -> None:
+    created = _create(client)
+
+    response = client.patch(f"/api/v1/portfolios/{created['id']}", json={"name": "Renamed"})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Renamed"
+
+
+def test_delete_holding_removes_one(client: TestClient) -> None:
+    created = _create(client)  # AAPL + BND
+
+    response = client.delete(f"/api/v1/portfolios/{created['id']}/holdings/aapl")
+
+    assert response.status_code == 200
+    tickers = {h["ticker"] for h in response.json()["holdings"]}
+    assert tickers == {"BND"}
+
+
+def test_delete_unknown_holding_returns_404(client: TestClient) -> None:
+    created = _create(client)
+
+    response = client.delete(f"/api/v1/portfolios/{created['id']}/holdings/ZZZZ")
+
+    assert response.status_code == 404
+
+
+def test_duplicate_creates_editable_copy(client: TestClient, db_session) -> None:
+    template_id = _create_template(db_session)
+
+    response = client.post(f"/api/v1/portfolios/{template_id}/duplicate")
+
+    assert response.status_code == 201
+    copy = response.json()
+    assert copy["id"] != template_id
+    assert copy["is_template"] is False
+    assert copy["name"] == "Preset Template (copy)"
+    assert {h["ticker"] for h in copy["holdings"]} == {"AAPL", "MSFT"}
+
+
+def test_template_is_read_only(client: TestClient, db_session) -> None:
+    template_id = _create_template(db_session)
+
+    # Mutations are rejected with 409 ...
+    assert client.patch(f"/api/v1/portfolios/{template_id}", json={"name": "X"}).status_code == 409
+    assert client.post(
+        f"/api/v1/portfolios/{template_id}/holdings",
+        json={"holdings": [{"ticker": "NVDA", "quantity": 1}]},
+    ).status_code == 409
+    assert client.delete(f"/api/v1/portfolios/{template_id}/holdings/AAPL").status_code == 409
+    assert client.delete(f"/api/v1/portfolios/{template_id}").status_code == 409
+
+    # ... but duplicating a template is allowed.
+    assert client.post(f"/api/v1/portfolios/{template_id}/duplicate").status_code == 201

@@ -72,7 +72,12 @@ def build_seed_holdings(target_weights: dict[str, float]) -> list[HoldingInput]:
 
 
 def seed_portfolios(db: Session) -> list[UserPortfolio]:
-    """Create the preset portfolios if they do not already exist (by name)."""
+    """Create the preset portfolios if they do not already exist (by name).
+
+    Seeded presets are read-only templates: the UI surfaces a "Duplicate to
+    edit" action for them. Re-running the seed backfills the flag on portfolios
+    created before templates existed.
+    """
 
     portfolios: list[UserPortfolio] = []
     for preset in get_preset_portfolios():
@@ -80,7 +85,12 @@ def seed_portfolios(db: Session) -> list[UserPortfolio]:
             select(UserPortfolio).where(UserPortfolio.name == preset.name)
         ).scalars().first()
         if existing is not None:
-            print(f"  portfolio exists, skipping: {preset.name}")
+            if not existing.is_template:
+                existing.is_template = True
+                db.commit()
+                print(f"  portfolio exists, marked as template: {preset.name}")
+            else:
+                print(f"  portfolio exists, skipping: {preset.name}")
             portfolios.append(existing)
             continue
 
@@ -88,8 +98,9 @@ def seed_portfolios(db: Session) -> list[UserPortfolio]:
             db,
             name=preset.name,
             holdings=build_seed_holdings(preset.target_weights),
+            is_template=True,
         )
-        print(f"  created portfolio: {preset.name} ({len(preset.target_weights)} holdings)")
+        print(f"  created template portfolio: {preset.name} ({len(preset.target_weights)} holdings)")
         portfolios.append(portfolio)
     return portfolios
 

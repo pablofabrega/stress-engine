@@ -40,6 +40,10 @@ def list_scenarios(db: Session) -> list[ScenarioDefinitionResponse]:
         for preset in HYPOTHETICAL_SCENARIOS.values()
     ]
 
+    # Preset runs materialize a ScenarioDefinition row (so the run FK is valid).
+    # Those rows are not genuine custom scenarios — they duplicate a preset above
+    # and are identified by a parameters["key"] that resolves to a known preset.
+    # Skip them so each preset appears exactly once (under its canonical key id).
     custom_rows = db.execute(select(ScenarioDefinition).order_by(ScenarioDefinition.created_at)).scalars().all()
     custom = [
         ScenarioDefinitionResponse(
@@ -52,8 +56,16 @@ def list_scenarios(db: Session) -> list[ScenarioDefinitionResponse]:
             source="custom",
         )
         for row in custom_rows
+        if not _is_materialized_preset(row)
     ]
     return presets + custom
+
+
+def _is_materialized_preset(row: ScenarioDefinition) -> bool:
+    """True if a stored definition is a preset persisted for run FK integrity."""
+
+    key = row.parameters.get("key") if isinstance(row.parameters, dict) else None
+    return key in HISTORICAL_SCENARIOS or key in HYPOTHETICAL_SCENARIOS
 
 
 def create_scenario(db: Session, request: ScenarioCreateRequest) -> ScenarioDefinition:

@@ -54,7 +54,7 @@ class LocalParquetCache:
             "fetched_at": path.stat().st_mtime,
         }
         fetched_at = datetime.fromtimestamp(metadata["fetched_at"], tz=timezone.utc)
-        return CachedDataset(data=dataframe, fetched_at=fetched_at, stale=self._is_stale(fetched_at))
+        return CachedDataset(data=dataframe, fetched_at=fetched_at, stale=self.is_stale(fetched_at))
 
     def write(self, descriptor: CacheDescriptor, dataframe: pd.DataFrame) -> Path:
         path = self._path_for(descriptor)
@@ -69,7 +69,24 @@ class LocalParquetCache:
     def describe(self, descriptor: CacheDescriptor) -> dict[str, str]:
         return asdict(descriptor)
 
-    def _is_stale(self, fetched_at: datetime | None) -> bool:
+    def latest_fetch(self, namespace: str) -> datetime | None:
+        """Most recent fetch time across all cached datasets in a namespace.
+
+        Returns the newest parquet modification time under ``namespace`` (the
+        same timestamp ``read`` reports as ``fetched_at``) as a UTC datetime, or
+        ``None`` if nothing has been cached for that namespace yet. Used by the
+        health endpoint to report real per-source data freshness.
+        """
+
+        namespace_dir = self.root_dir / self._sanitize(namespace)
+        if not namespace_dir.exists():
+            return None
+        mtimes = [path.stat().st_mtime for path in namespace_dir.rglob("*.parquet")]
+        if not mtimes:
+            return None
+        return datetime.fromtimestamp(max(mtimes), tz=timezone.utc)
+
+    def is_stale(self, fetched_at: datetime | None) -> bool:
         if fetched_at is None:
             return False
         age_seconds = (datetime.now(timezone.utc) - fetched_at).total_seconds()

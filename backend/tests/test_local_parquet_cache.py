@@ -95,6 +95,28 @@ class TestLocalParquetCacheStaleness:
         assert result.stale is True
 
 
+class TestLocalParquetCacheLatestFetch:
+    def test_returns_none_for_empty_namespace(self, tmp_path: str) -> None:
+        cache = LocalParquetCache(root_dir=tmp_path)
+        assert cache.latest_fetch("prices/yfinance") is None
+
+    def test_returns_timestamp_after_write(self, tmp_path: str) -> None:
+        cache = LocalParquetCache(root_dir=tmp_path)
+        cache.write(_descriptor(), _sample_frame())
+
+        latest = cache.latest_fetch("prices/yfinance")
+        assert latest is not None
+        # Matches the fetched_at the same dataset reports on read.
+        assert latest == cache.read(_descriptor()).fetched_at
+
+    def test_isolated_by_namespace(self, tmp_path: str) -> None:
+        cache = LocalParquetCache(root_dir=tmp_path)
+        cache.write(_descriptor(namespace="prices/yfinance"), _sample_frame())
+
+        assert cache.latest_fetch("prices/yfinance") is not None
+        assert cache.latest_fetch("macro/fred") is None
+
+
 class TestLocalParquetCacheDescribe:
     def test_describe_returns_dict(self, tmp_path: str) -> None:
         cache = LocalParquetCache(root_dir=tmp_path)

@@ -20,10 +20,15 @@ _UNKNOWN_SECTOR = "Unknown"
 _metadata_resolver = SecurityMetadataResolver()
 
 
-def create_portfolio(db: Session, name: str, holdings: Iterable[HoldingInput]) -> UserPortfolio:
+def create_portfolio(
+    db: Session,
+    name: str,
+    holdings: Iterable[HoldingInput],
+    is_template: bool = False,
+) -> UserPortfolio:
     """Persist a new portfolio and its holdings."""
 
-    portfolio = UserPortfolio(name=name)
+    portfolio = UserPortfolio(name=name, is_template=is_template)
     for holding in holdings:
         portfolio.holdings.append(_to_holding(holding))
     db.add(portfolio)
@@ -75,6 +80,52 @@ def upsert_holdings(db: Session, portfolio: UserPortfolio, holdings: Iterable[Ho
     db.commit()
     db.refresh(portfolio)
     return portfolio
+
+
+def rename_portfolio(db: Session, portfolio: UserPortfolio, name: str) -> UserPortfolio:
+    """Rename a portfolio in place."""
+
+    portfolio.name = name
+    db.commit()
+    db.refresh(portfolio)
+    return portfolio
+
+
+def delete_holding(db: Session, portfolio: UserPortfolio, ticker: str) -> bool:
+    """Remove a single holding by ticker (case-insensitive). Returns True if removed."""
+
+    target = ticker.upper()
+    for holding in list(portfolio.holdings):
+        if holding.ticker.upper() == target:
+            portfolio.holdings.remove(holding)
+            db.commit()
+            db.refresh(portfolio)
+            return True
+    return False
+
+
+def duplicate_portfolio(db: Session, portfolio: UserPortfolio, name: str | None = None) -> UserPortfolio:
+    """Create an editable, non-template copy of a portfolio and its holdings.
+
+    Sector / asset-class tags are copied verbatim from the source so the copy
+    does not trigger a fresh (and potentially network-bound) metadata lookup.
+    """
+
+    copy = UserPortfolio(name=name or f"{portfolio.name} (copy)", is_template=False)
+    for holding in portfolio.holdings:
+        copy.holdings.append(
+            Holding(
+                ticker=holding.ticker,
+                quantity=holding.quantity,
+                cost_basis=holding.cost_basis,
+                asset_class=holding.asset_class,
+                sector=holding.sector,
+            )
+        )
+    db.add(copy)
+    db.commit()
+    db.refresh(copy)
+    return copy
 
 
 def delete_portfolio(db: Session, portfolio: UserPortfolio) -> None:

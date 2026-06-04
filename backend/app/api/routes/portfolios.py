@@ -21,6 +21,7 @@ from app.schemas.portfolio import (
     HoldingsUpdateRequest,
     PortfolioCreateRequest,
     PortfolioDetailResponse,
+    PortfolioRenameRequest,
     PortfolioResponse,
     PresetPortfolioResponse,
 )
@@ -36,6 +37,16 @@ def _get_or_404(db: Session, portfolio_id: uuid.UUID):
     if portfolio is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found.")
     return portfolio
+
+
+def _reject_if_template(portfolio) -> None:
+    """Templates are read-only; callers must duplicate them before editing."""
+
+    if portfolio.is_template:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This portfolio is a read-only template. Duplicate it to make changes.",
+        )
 
 
 @router.get("", response_model=list[PortfolioResponse])
@@ -71,9 +82,29 @@ def get_portfolio(portfolio_id: uuid.UUID, db: Session = Depends(get_db)) -> Por
         id=portfolio.id,
         name=portfolio.name,
         created_at=portfolio.created_at,
+        is_template=portfolio.is_template,
         holdings=list(portfolio.holdings),
         analytics=portfolio_service.nominal_analytics(portfolio),
     )
+
+
+@router.patch("/{portfolio_id}", response_model=PortfolioResponse)
+def rename_portfolio(
+    portfolio_id: uuid.UUID,
+    request: PortfolioRenameRequest,
+    db: Session = Depends(get_db),
+) -> PortfolioResponse:
+    portfolio = _get_or_404(db, portfolio_id)
+    _reject_if_template(portfolio)
+    portfolio = portfolio_service.rename_portfolio(db, portfolio, request.name)
+    return PortfolioResponse.model_validate(portfolio)
+
+
+@router.post("/{portfolio_id}/duplicate", response_model=PortfolioResponse, status_code=status.HTTP_201_CREATED)
+def duplicate_portfolio(portfolio_id: uuid.UUID, db: Session = Depends(get_db)) -> PortfolioResponse:
+    portfolio = _get_or_404(db, portfolio_id)
+    copy = portfolio_service.duplicate_portfolio(db, portfolio)
+    return PortfolioResponse.model_validate(copy)
 
 
 @router.post("/{portfolio_id}/holdings", response_model=PortfolioResponse)
@@ -83,13 +114,27 @@ def update_holdings(
     db: Session = Depends(get_db),
 ) -> PortfolioResponse:
     portfolio = _get_or_404(db, portfolio_id)
+    _reject_if_template(portfolio)
     portfolio = portfolio_service.upsert_holdings(db, portfolio, request.holdings)
+    return PortfolioResponse.model_validate(portfolio)
+
+
+@router.delete("/{portfolio_id}/holdings/{ticker}", response_model=PortfolioResponse)
+def delete_holding(portfolio_id: uuid.UUID, ticker: str, db: Session = Depends(get_db)) -> PortfolioResponse:
+    portfolio = _get_or_404(db, portfolio_id)
+    _reject_if_template(portfolio)
+    if not portfolio_service.delete_holding(db, portfolio, ticker):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Holding {ticker.upper()} not found in this portfolio.",
+        )
     return PortfolioResponse.model_validate(portfolio)
 
 
 @router.delete("/{portfolio_id}", response_model=MessageResponse)
 def delete_portfolio(portfolio_id: uuid.UUID, db: Session = Depends(get_db)) -> MessageResponse:
     portfolio = _get_or_404(db, portfolio_id)
+    _reject_if_template(portfolio)
     portfolio_service.delete_portfolio(db, portfolio)
     return MessageResponse(detail="Portfolio deleted.")
 

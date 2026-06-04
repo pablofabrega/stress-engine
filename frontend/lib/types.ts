@@ -20,6 +20,7 @@ export interface Portfolio {
   id: string;
   name: string;
   created_at: string;
+  is_template: boolean;
   holdings: Holding[];
 }
 
