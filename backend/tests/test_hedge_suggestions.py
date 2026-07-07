@@ -60,7 +60,7 @@ def test_hedge_suggestion_engine_emits_expected_triggered_suggestions() -> None:
     suggestions = engine.suggest(holdings=holdings, risk_summary=risk_summary, scenario_result=scenario_result)
 
     instruments = [suggestion.instrument for suggestion in suggestions]
-    assert instruments == ["SH", "TLT", "QQQ", "LQD", "Cash / T-Bills"]
+    assert instruments == ["SH", "TLT (short)", "QQQ (short)", "LQD", "Cash / T-Bills"]
 
 
 def _risk_summary(beta: float = 1.0, cvar_95: float = 0.0, latest_rolling_vol: float = 0.18) -> RiskAnalyticsResult:
@@ -143,7 +143,7 @@ def test_high_duration_triggers_treasury_hedge_only() -> None:
 
     suggestions = _empty_engine().suggest(holdings=holdings, risk_summary=_risk_summary(beta=0.2))
 
-    assert [s.instrument for s in suggestions] == ["TLT"]
+    assert [s.instrument for s in suggestions] == ["TLT (short)"]
     tlt = suggestions[0]
     assert tlt.hedge_ratio == pytest.approx(1.0)  # portfolio is 100% TLT
     assert tlt.severity == "high"
@@ -157,7 +157,7 @@ def test_tech_concentration_above_40pct_triggers_qqq_only() -> None:
 
     suggestions = _empty_engine().suggest(holdings=holdings, risk_summary=_risk_summary(beta=1.0))
 
-    assert [s.instrument for s in suggestions] == ["QQQ"]
+    assert [s.instrument for s in suggestions] == ["QQQ (short)"]
     assert suggestions[0].hedge_ratio == pytest.approx(0.5)  # tech weight
     assert suggestions[0].severity == "high"
 
@@ -186,19 +186,21 @@ def test_high_yield_exposure_triggers_credit_rotation_only() -> None:
     assert suggestions[0].severity == "medium"
 
 
-def test_elevated_cvar_triggers_cash_buffer_with_kelly_sizing() -> None:
+def test_elevated_cvar_triggers_defensive_cash_buffer() -> None:
     suggestions = _empty_engine().suggest(
-        holdings=[_cash()], risk_summary=_risk_summary(beta=0.5, cvar_95=0.10, latest_rolling_vol=0.10)
+        holdings=[_cash()], risk_summary=_risk_summary(beta=0.5, cvar_95=0.035)
     )
 
     assert [s.instrument for s in suggestions] == ["Cash / T-Bills"]
-    # min(max(cvar/vol^2 * 1%, 5%), 25%) = min(max(0.10/0.01*0.01, 0.05), 0.25) = 0.10
-    assert suggestions[0].hedge_ratio == pytest.approx(0.10)
+    # Linear map: floor 5% at CVaR 2%, cap 25% at CVaR 5%. CVaR 3.5% is the midpoint -> 15%.
+    assert suggestions[0].hedge_ratio == pytest.approx(0.15)
+    # No scenario supplied, so no structural avoided-loss figure is reported.
+    assert suggestions[0].historical_effectiveness is None
 
 
 def test_cash_buffer_is_capped_at_25pct() -> None:
     suggestions = _empty_engine().suggest(
-        holdings=[_cash()], risk_summary=_risk_summary(beta=0.5, cvar_95=0.30, latest_rolling_vol=0.10)
+        holdings=[_cash()], risk_summary=_risk_summary(beta=0.5, cvar_95=0.30)
     )
 
     assert suggestions[0].hedge_ratio == pytest.approx(0.25)
@@ -206,7 +208,7 @@ def test_cash_buffer_is_capped_at_25pct() -> None:
 
 def test_cash_buffer_not_triggered_below_cvar_threshold() -> None:
     suggestions = _empty_engine().suggest(
-        holdings=[_cash()], risk_summary=_risk_summary(beta=0.5, cvar_95=0.02, latest_rolling_vol=0.10)
+        holdings=[_cash()], risk_summary=_risk_summary(beta=0.5, cvar_95=0.02)
     )
 
     assert suggestions == []

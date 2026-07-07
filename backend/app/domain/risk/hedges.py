@@ -9,6 +9,16 @@ from app.domain.portfolio.models import PortfolioHolding
 from app.domain.risk.constants import DEFAULT_HEDGE_COST_BPS, FIXED_INCOME_DURATIONS
 from app.domain.risk.models import HedgeSuggestion, RiskAnalyticsResult
 
+# Defensive cash-sleeve sizing. This is a transparent heuristic, not Kelly sizing:
+# a deeper left tail (higher daily CVaR-95) warrants more cash, floored and capped
+# for practicality. All anchors are daily CVaR levels, so the mapping is
+# dimensionally consistent (daily loss in, weight out).
+CVAR_BUFFER_TRIGGER = 0.02  # daily CVaR-95 above which a cash sleeve is suggested
+CVAR_BUFFER_FLOOR = 0.05  # minimum sleeve once triggered
+CVAR_BUFFER_CAP = 0.25  # maximum sleeve
+CVAR_BUFFER_ANCHOR_LOW = 0.02  # daily CVaR mapped to the floor
+CVAR_BUFFER_ANCHOR_HIGH = 0.05  # daily CVaR mapped to the cap
+
 
 class HedgeSuggestionEngine:
     """Generate explainable hedge suggestions from portfolio risk metrics and scenario results."""
@@ -36,7 +46,6 @@ class HedgeSuggestionEngine:
         if np.isfinite(market_beta) and market_beta > 1.1:
             hedge_ratio = market_beta - 1.0
             effectiveness = self._inverse_equity_effectiveness(
-                instrument="SH",
                 hedge_ratio=hedge_ratio,
                 portfolio_value=portfolio_value,
                 scenario_result=scenario_result,
@@ -68,40 +77,38 @@ class HedgeSuggestionEngine:
             )
             suggestions.append(
                 HedgeSuggestion(
-                    instrument="TLT",
-                    rationale="The portfolio carries meaningful rate sensitivity, so a duration hedge can offset losses when yields rise.",
+                    instrument="TLT (short)",
+                    rationale="The portfolio carries meaningful long-duration exposure. A short TLT overlay (or trimming long-dated bonds) offsets losses when yields rise, because a short-duration position gains value as rates climb. Note: adding long TLT would increase, not reduce, this risk.",
                     severity="high" if abs(duration_dv01) > portfolio_value * 0.0006 else "medium",
                     hedge_ratio=hedge_ratio,
                     hedge_ratio_steps=[
                         f"Portfolio DV01 = {duration_dv01:.4f} dollars per 1 bp move.",
                         f"TLT DV01 per dollar of notional is approximately {FIXED_INCOME_DURATIONS['TLT'] * 0.0001:.6f}.",
-                        f"Hedge ratio = portfolio DV01 / hedge DV01 per dollar / portfolio value = {hedge_ratio:.2f}.",
+                        f"Short-TLT hedge ratio = portfolio DV01 / (TLT DV01 per dollar x portfolio value) = {hedge_ratio:.2f}.",
                     ],
                     estimated_annual_cost_bps=DEFAULT_HEDGE_COST_BPS["TLT"],
                     historical_effectiveness=effectiveness,
-                    weakness_citation="Long-duration fixed-income exposure is large enough to materially hurt the portfolio in a rate shock.",
+                    weakness_citation="Long-duration fixed-income exposure is large enough to materially hurt the portfolio in a rate shock; the hedge is a short/underweight, not adding TLT.",
                 )
             )
 
         if tech_weight > 0.40:
             hedge_ratio = tech_weight
             effectiveness = self._inverse_equity_effectiveness(
-                instrument="QQQ",
                 hedge_ratio=hedge_ratio,
                 portfolio_value=portfolio_value,
                 scenario_result=scenario_result,
-                inverse=False,
             )
             suggestions.append(
                 HedgeSuggestion(
-                    instrument="QQQ",
-                    rationale="Technology concentration above 40% leaves the portfolio exposed to a single growth style regime.",
+                    instrument="QQQ (short)",
+                    rationale="Technology concentration above 40% leaves the portfolio exposed to a single growth-style regime. A short QQQ overlay offsets tech-specific drawdowns; effectiveness here is proxied by SPY, which understates a pure-tech hedge.",
                     severity="high",
                     hedge_ratio=hedge_ratio,
                     hedge_ratio_steps=[
                         f"Technology weight = {tech_weight:.2%}.",
-                        "Use the concentrated sector weight as the first-pass hedge notional ratio.",
-                        f"Sector beta offset ratio = {tech_weight:.2f}.",
+                        "Use the concentrated sector weight as the first-pass short-hedge notional ratio.",
+                        f"Short-QQQ hedge ratio = {tech_weight:.2f}.",
                     ],
                     estimated_annual_cost_bps=DEFAULT_HEDGE_COST_BPS["QQQ"],
                     historical_effectiveness=effectiveness,
@@ -133,22 +140,24 @@ class HedgeSuggestionEngine:
                 )
             )
 
-        if np.isfinite(risk_summary.cvar_95) and np.isfinite(risk_summary.latest_rolling_vol) and risk_summary.cvar_95 > 0.02:
-            cash_buffer = min(max((risk_summary.cvar_95 / max(risk_summary.latest_rolling_vol**2, 1e-6)) * 0.01, 0.05), 0.25)
+        if np.isfinite(risk_summary.cvar_95) and risk_summary.cvar_95 > CVAR_BUFFER_TRIGGER:
+            cash_buffer = self._defensive_cash_buffer(risk_summary.cvar_95)
+            # A cash sleeve of `cash_buffer` sits out of the market, so by construction it
+            # avoids exactly that fraction of any drawdown. Reported transparently rather
+            # than dressed up as an effect inferred from price history.
             avoided_loss = None
             if scenario_result is not None and not scenario_result.portfolio_path.empty:
-                scenario_loss = abs(float(scenario_result.portfolio_path["pnl_dollars"].iloc[-1]))
-                avoided_loss = (cash_buffer * scenario_loss) / scenario_loss if scenario_loss > 0 else None
+                avoided_loss = cash_buffer
             suggestions.append(
                 HedgeSuggestion(
                     instrument="Cash / T-Bills",
-                    rationale="Elevated CVaR indicates material tail risk, so a conservative Kelly-style cash buffer reduces exposure to the left tail.",
+                    rationale="Elevated CVaR signals material tail risk. A defensive cash sleeve, sized from tail severity, caps left-tail exposure. This is a heuristic buffer, not an optimal (Kelly) allocation.",
                     severity="medium",
                     hedge_ratio=cash_buffer,
                     hedge_ratio_steps=[
-                        f"CVaR 95 = {risk_summary.cvar_95:.2%}.",
-                        f"Latest rolling volatility = {risk_summary.latest_rolling_vol:.2%}.",
-                        f"Conservative Kelly-style cash buffer = min(max(CVaR / vol^2 * 1%, 5%), 25%) = {cash_buffer:.2%}.",
+                        f"CVaR 95 (daily) = {risk_summary.cvar_95:.2%}.",
+                        f"Map tail severity to a cash sleeve: floored at {CVAR_BUFFER_FLOOR:.0%} for CVaR <= {CVAR_BUFFER_ANCHOR_LOW:.0%}, capped at {CVAR_BUFFER_CAP:.0%} for CVaR >= {CVAR_BUFFER_ANCHOR_HIGH:.0%}.",
+                        f"Defensive cash buffer = {cash_buffer:.2%}.",
                     ],
                     estimated_annual_cost_bps=DEFAULT_HEDGE_COST_BPS["Cash / T-Bills"],
                     historical_effectiveness=avoided_loss,
@@ -167,20 +176,38 @@ class HedgeSuggestionEngine:
             total += self._base_position_value(holding) * duration * 0.0001
         return total
 
+    def _defensive_cash_buffer(self, cvar_95: float) -> float:
+        """Size a defensive cash sleeve by linearly mapping daily CVaR-95 severity to a capped weight.
+
+        This is a transparent heuristic, not Kelly/optimal sizing. A deeper left tail warrants
+        more cash; the buffer is floored and capped for practicality. Both the input and the
+        anchor points are daily CVaR levels, so the mapping is dimensionally consistent.
+        """
+
+        span = CVAR_BUFFER_ANCHOR_HIGH - CVAR_BUFFER_ANCHOR_LOW
+        fraction = (cvar_95 - CVAR_BUFFER_ANCHOR_LOW) / span
+        buffer = CVAR_BUFFER_FLOOR + fraction * (CVAR_BUFFER_CAP - CVAR_BUFFER_FLOOR)
+        return float(min(max(buffer, CVAR_BUFFER_FLOOR), CVAR_BUFFER_CAP))
+
     def _inverse_equity_effectiveness(
         self,
-        instrument: str,
         hedge_ratio: float,
         portfolio_value: float,
         scenario_result,
-        inverse: bool = True,
     ) -> float | None:
+        """Effectiveness of a short-equity overlay (long inverse ETF such as SH, or short QQQ).
+
+        The overlay gains roughly the negative of the equity benchmark's move, so it offsets a
+        fraction of the scenario loss. SPY cumulative return is used as the market proxy, which
+        understates a tech-specific (QQQ) hedge — a known limitation surfaced in the rationale.
+        """
+
         if scenario_result is None or scenario_result.comparison_path.empty:
             return None
         if "spy_cumulative_return" not in scenario_result.comparison_path.columns:
             return None
         benchmark_return = float(scenario_result.comparison_path["spy_cumulative_return"].iloc[-1])
-        hedge_return = -benchmark_return if inverse else -benchmark_return
+        hedge_return = -benchmark_return  # a short-equity overlay gains when the market falls
         offset = hedge_ratio * hedge_return * portfolio_value
         scenario_loss = abs(float(scenario_result.portfolio_path["pnl_dollars"].iloc[-1]))
         return offset / scenario_loss if scenario_loss > 0 else None
