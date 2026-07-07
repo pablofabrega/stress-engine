@@ -8,6 +8,7 @@ import statsmodels.api as sm
 from app.domain.data.fama_french import FamaFrenchLoader
 from app.domain.data.fetchers import HistoricalDataFetcher
 from app.domain.data.returns import ReturnsCalculator
+from app.domain.instrument_reference import FIXED_INCOME_DURATIONS
 from app.domain.portfolio.models import (
     DV01Result,
     FactorDecompositionResult,
@@ -15,29 +16,6 @@ from app.domain.portfolio.models import (
     PortfolioHolding,
     PortfolioReturnHistory,
 )
-
-FIXED_INCOME_DURATION_ESTIMATES: dict[str, float] = {
-    "BND": 6.5,
-    "TLT": 17.0,
-    "IEF": 7.5,
-    "SHY": 1.9,
-    "AGG": 6.2,
-    "TIPS": 7.0,
-    "LQD": 8.5,
-    "HYG": 3.8,
-    "JNK": 3.5,
-    "VCIT": 6.3,
-    "VCSH": 2.8,
-    "MUB": 5.8,
-    "TIP": 6.9,
-    "VGSH": 1.9,
-    "VGIT": 5.2,
-    "VGLT": 16.5,
-    "GOVT": 6.0,
-    "IGIB": 6.5,
-    "IGSB": 2.6,
-    "EMB": 7.2,
-}
 
 
 class PortfolioAnalytics:
@@ -200,8 +178,9 @@ class PortfolioAnalytics:
 
             DV01 = market_value × modified_duration × 0.0001
 
-        Duration estimates come from a static lookup table of common fixed-income
-        ETFs. Holdings not recognized as fixed-income are skipped.
+        Duration estimates come from the shared static lookup table of common
+        fixed-income ETFs (app.domain.instrument_reference.FIXED_INCOME_DURATIONS).
+        Holdings not recognized as fixed-income are skipped.
         """
 
         fi_asset_classes = {"Fixed Income ETF", "Credit ETF", "Treasury ETF", "Fixed Income"}
@@ -212,7 +191,7 @@ class PortfolioAnalytics:
             if holding.asset_class not in fi_asset_classes:
                 continue
 
-            duration = FIXED_INCOME_DURATION_ESTIMATES.get(holding.ticker)
+            duration = FIXED_INCOME_DURATIONS.get(holding.ticker.upper())
             if duration is None:
                 warnings.append(
                     f"No duration estimate available for {holding.ticker}; using default 5.0 years."
