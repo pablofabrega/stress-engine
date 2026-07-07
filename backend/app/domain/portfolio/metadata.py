@@ -21,10 +21,10 @@ STATIC_SECURITY_METADATA: dict[str, SecurityMetadata] = {
     "SH": SecurityMetadata("SH", "Inverse ETF", "Equity Hedge", "static_lookup"),
     "SPY": SecurityMetadata("SPY", "Equity ETF", "Broad Market", "static_lookup"),
     "TLT": SecurityMetadata("TLT", "Treasury ETF", "Fixed Income", "static_lookup"),
-    "TIPS": SecurityMetadata("TIPS", "Treasury ETF", "Fixed Income", "static_lookup"),
+    "TIP": SecurityMetadata("TIP", "Treasury ETF", "Fixed Income", "static_lookup"),
     "VNQ": SecurityMetadata("VNQ", "Real Estate ETF", "Real Estate", "static_lookup"),
     "VTI": SecurityMetadata("VTI", "Equity ETF", "Broad Market", "static_lookup"),
-    "VYD": SecurityMetadata("VYD", "Dividend ETF", "Defensive Equity", "static_lookup"),
+    "VYM": SecurityMetadata("VYM", "Dividend ETF", "Defensive Equity", "static_lookup"),
     "XLP": SecurityMetadata("XLP", "Sector ETF", "Consumer Staples", "static_lookup"),
     "XLU": SecurityMetadata("XLU", "Sector ETF", "Utilities", "static_lookup"),
     # Common single-name equities (so manual entry resolves without a network call).

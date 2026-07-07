@@ -25,7 +25,7 @@ PRESET_PORTFOLIOS: dict[str, PresetPortfolioDefinition] = {
         key="defensive",
         name="Defensive",
         description="A lower-beta allocation emphasizing dividends, defensives, long duration, and gold.",
-        target_weights={"VYD": 0.30, "XLU": 0.20, "XLP": 0.20, "TLT": 0.15, "GLD": 0.15},
+        target_weights={"VYM": 0.30, "XLU": 0.20, "XLP": 0.20, "TLT": 0.15, "GLD": 0.15},
     ),
 }
 
