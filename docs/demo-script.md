@@ -2,9 +2,11 @@
 
 **Target length:** 3–5 minutes. **Audience:** a recruiter or interviewer (SWE / quant / consulting).
 
-**Before you start:** `docker compose up --build`, run `alembic upgrade head`, and seed with
-`python -m app.db.seed` (executes scenario runs against the data provider). Open
-`http://localhost:3000`. Have the **Concentrated Tech** preset selected in the header dropdown.
+**Before you start:** `docker compose up --build`, then (inside the container)
+`docker compose exec backend alembic upgrade head` and
+`docker compose exec backend python -m app.db.seed` (executes scenario runs against the data
+provider). Open `http://localhost:3000`. Have the **Concentrated Tech** preset selected in the
+header dropdown.
 
 ---
 
@@ -60,7 +62,7 @@ shock of -20%.
 
 > "Shocks are applied through factor sensitivities — beta for equities, duration for bonds, sector
 > correlations for spillovers. We get instantaneous PnL, a liquidity-adjusted loss after a
-> days-to-liquidate haircut, a simulated 30-day path, and the factor-exposure shift."
+> days-to-liquidate haircut, an illustrative 30-day path (vol-scaled, not Monte Carlo), and the factor-exposure shift."
 
 Point to **Most similar historical periods**.
 
@@ -83,7 +85,7 @@ Go to **Settings** to show data-source health, then close:
 
 > "Architecturally: a swappable data-provider abstraction, clean domain/service/API layering with
 > typed Pydantic contracts, scenario execution that runs inline or on a Celery worker through one
-> shared executor, and 235 passing tests. The emphasis throughout is interpretability — every method
+> shared executor, and 250 passing tests at ~89% analytics coverage. The emphasis throughout is interpretability — every method
 > is defensible from first principles, and nothing uses synthetic data."
 
 ---

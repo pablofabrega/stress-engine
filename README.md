@@ -1,5 +1,9 @@
 # Market Scenario and Stress Testing Workbench
 
+[![CI](https://github.com/pablofabrega/stress-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/pablofabrega/stress-engine/actions/workflows/ci.yml)
+[![Analytics coverage](https://img.shields.io/badge/analytics%20coverage-89%25-brightgreen)](backend/pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Market Scenario and Stress Testing Workbench is a full-stack portfolio risk application designed to look and behave like a serious institutional decision-support tool. It combines a FastAPI backend, a Next.js frontend, and a quantitative analytics layer to help a user understand how a portfolio behaves under historical crises and hypothetical macro shocks.
 
 It answers three questions a portfolio manager actually asks:
@@ -45,12 +49,13 @@ The application is functional end to end:
 
 1. Copy `.env.example` to `.env`: `cp .env.example .env`.
 2. Start the stack: `docker compose up --build` (Postgres, Redis, backend, Celery worker, frontend).
-3. Run migrations: `cd backend && alembic upgrade head`.
-4. Seed demo data (four preset portfolios; scenario runs are executed against the configured data provider): `cd backend && python -m app.db.seed`.
-   - Add `--no-execute` to leave runs in the `pending` state, or `--sqlite demo.db` to seed a standalone SQLite file with no Postgres.
+3. Run migrations **inside the backend container** (the DB host `postgres` only resolves on the compose network, and it is published to host port `5433`): `docker compose exec backend alembic upgrade head`.
+4. Seed demo data (four preset portfolios; scenario runs are executed against the configured data provider): `docker compose exec backend python -m app.db.seed`.
+   - Add `--no-execute` to leave runs in the `pending` state.
+   - No Docker? Seed a standalone SQLite file instead: `cd backend && python -m app.db.seed --sqlite demo.db`.
 5. Open `http://localhost:3000` (frontend) and `http://localhost:8000/docs` (API docs).
 
-Run the backend tests with `cd backend && pytest`.
+Run the backend tests with `cd backend && pip install -e '.[dev]' && pytest`. The suite has 250 tests and enforces an 85% coverage gate on the analytics layer (`app/domain`), which currently sits at ~89%.
 
 ### Running pieces without Docker
 
