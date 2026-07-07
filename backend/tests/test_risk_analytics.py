@@ -56,6 +56,47 @@ def test_historical_var_and_cvar_are_empirical_tail_losses() -> None:
     assert np.isclose(cvar_95, 0.03)
 
 
+def _synthetic_returns(n: int = 252, seed: int = 42) -> pd.Series:
+    rng = np.random.default_rng(seed)
+    values = rng.normal(loc=0.0005, scale=0.012, size=n)
+    index = pd.date_range("2022-01-01", periods=n, freq="B", name="date")
+    return pd.Series(values, index=index, name="portfolio_return")
+
+
+def test_bootstrap_tail_risk_ci_brackets_point_estimates() -> None:
+    analytics = RiskAnalytics()
+    returns = _synthetic_returns()
+
+    point_var = analytics.historical_var(returns, confidence_level=0.95)
+    point_cvar = analytics.cvar(returns, confidence_level=0.95)
+    ci = analytics.bootstrap_tail_risk_ci(returns, confidence_level=0.95, seed=7)
+
+    assert ci is not None
+    assert ci.var_low <= point_var <= ci.var_high
+    assert ci.cvar_low <= point_cvar <= ci.cvar_high
+    assert ci.var_low < ci.var_high
+    assert ci.cvar_low < ci.cvar_high
+    assert ci.ci_level == 0.90
+    assert ci.n_bootstrap == 1000
+
+
+def test_bootstrap_tail_risk_ci_is_deterministic_for_a_fixed_seed() -> None:
+    analytics = RiskAnalytics()
+    returns = _synthetic_returns()
+
+    first = analytics.bootstrap_tail_risk_ci(returns, seed=11)
+    second = analytics.bootstrap_tail_risk_ci(returns, seed=11)
+
+    assert first == second
+
+
+def test_bootstrap_tail_risk_ci_returns_none_with_too_few_observations() -> None:
+    analytics = RiskAnalytics()
+    returns = _synthetic_returns(n=10)
+
+    assert analytics.bootstrap_tail_risk_ci(returns) is None
+
+
 def test_drawdown_summary_and_recovery_time_are_computed_from_compounded_wealth() -> None:
     analytics = RiskAnalytics()
     returns = pd.Series(

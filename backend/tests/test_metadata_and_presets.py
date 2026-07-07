@@ -92,7 +92,7 @@ class TestPresetPortfolios:
 
     def test_defensive(self) -> None:
         preset = get_preset_portfolio("defensive")
-        assert set(preset.target_weights.keys()) == {"VYD", "XLU", "XLP", "TLT", "GLD"}
+        assert set(preset.target_weights.keys()) == {"VYM", "XLU", "XLP", "TLT", "GLD"}
         assert sum(preset.target_weights.values()) == pytest.approx(1.0)
 
     def test_all_preset_weights_sum_to_one(self) -> None:

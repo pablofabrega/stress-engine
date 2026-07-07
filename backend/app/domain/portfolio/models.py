@@ -78,7 +78,8 @@ class DV01Result:
 
         DV01 ≈ market_value × modified_duration × 0.0001
 
-    Modified duration is estimated from an assumed coupon rate and maturity.
+    Modified duration comes from a static lookup table of common fixed-income ETFs
+    (app.domain.instrument_reference.FIXED_INCOME_DURATIONS), not from coupon/maturity inputs.
     """
 
     ticker: str

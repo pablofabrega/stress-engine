@@ -28,6 +28,18 @@ class DrawdownSummary:
 
 
 @dataclass(slots=True)
+class TailRiskConfidenceInterval:
+    """Bootstrap percentile confidence interval for VaR and CVaR tail-risk estimates."""
+
+    var_low: float
+    var_high: float
+    cvar_low: float
+    cvar_high: float
+    ci_level: float
+    n_bootstrap: int
+
+
+@dataclass(slots=True)
 class RiskAnalyticsResult:
     """Risk summary bundle for a portfolio over a chosen lookback period."""
 
@@ -41,6 +53,7 @@ class RiskAnalyticsResult:
     rolling_correlation_matrix: pd.DataFrame
     factor_exposure_summary: FactorDecompositionResult
     warnings: list[str] = field(default_factory=list)
+    tail_risk_ci: TailRiskConfidenceInterval | None = None
 
 
 @dataclass(slots=True)

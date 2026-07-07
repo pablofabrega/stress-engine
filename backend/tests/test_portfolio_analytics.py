@@ -6,7 +6,8 @@ import pandas as pd
 import pytest
 
 from app.domain.data.models import FetchResult
-from app.domain.portfolio.analytics import FIXED_INCOME_DURATION_ESTIMATES, PortfolioAnalytics
+from app.domain.instrument_reference import FIXED_INCOME_DURATIONS
+from app.domain.portfolio.analytics import PortfolioAnalytics
 from app.domain.portfolio.models import PortfolioHolding
 
 
@@ -182,8 +183,8 @@ class TestEstimateDV01:
         assert len(summary.holdings) == 1
         result = summary.holdings[0]
         assert result.ticker == "TLT"
-        assert result.estimated_duration == 17.0
-        expected_dv01 = 100000.0 * 17.0 * 0.0001
+        assert result.estimated_duration == 16.8
+        expected_dv01 = 100000.0 * 16.8 * 0.0001
         assert result.dv01 == pytest.approx(expected_dv01)
         assert summary.total_dv01 == pytest.approx(expected_dv01)
 
@@ -211,8 +212,8 @@ class TestEstimateDV01:
         tickers = {r.ticker for r in summary.holdings}
         assert tickers == {"BND", "TLT"}
 
-        bnd_dv01 = 35000.0 * 6.5 * 0.0001
-        tlt_dv01 = 9000.0 * 17.0 * 0.0001
+        bnd_dv01 = 35000.0 * 6.4 * 0.0001
+        tlt_dv01 = 9000.0 * 16.8 * 0.0001
         assert summary.total_dv01 == pytest.approx(bnd_dv01 + tlt_dv01)
 
     def test_unknown_fi_ticker_uses_default_duration(self) -> None:
@@ -234,8 +235,8 @@ class TestEstimateDV01:
         assert summary.holdings[0].estimated_duration == 3.8
 
     def test_duration_estimates_table_complete(self) -> None:
-        expected_tickers = {"BND", "TLT", "IEF", "SHY", "AGG", "TIPS", "LQD", "HYG", "JNK"}
-        assert expected_tickers.issubset(FIXED_INCOME_DURATION_ESTIMATES.keys())
+        expected_tickers = {"BND", "TLT", "IEF", "SHY", "AGG", "TIP", "LQD", "HYG", "JNK"}
+        assert expected_tickers.issubset(FIXED_INCOME_DURATIONS.keys())
 
     def test_empty_portfolio(self) -> None:
         analytics = PortfolioAnalytics(historical_data_fetcher=FakeHistoricalDataFetcher({}))

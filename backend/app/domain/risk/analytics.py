@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from datetime import date
 
+import numpy as np
 import pandas as pd
 
 from app.domain.data.returns import ReturnsCalculator
 from app.domain.portfolio.analytics import PortfolioAnalytics
 from app.domain.portfolio.models import FactorDecompositionResult, PortfolioHolding
-from app.domain.risk.models import ConcentrationMetrics, DrawdownSummary, RiskAnalyticsResult
+from app.domain.risk.models import (
+    ConcentrationMetrics,
+    DrawdownSummary,
+    RiskAnalyticsResult,
+    TailRiskConfidenceInterval,
+)
 
 
 class RiskAnalytics:
@@ -46,6 +52,57 @@ class RiskAnalytics:
         if tail.empty:
             return float("nan")
         return -float(tail.mean())
+
+    def bootstrap_tail_risk_ci(
+        self,
+        returns: pd.Series,
+        confidence_level: float = 0.95,
+        ci_level: float = 0.90,
+        n_bootstrap: int = 1000,
+        seed: int = 0,
+        min_observations: int = 30,
+    ) -> TailRiskConfidenceInterval | None:
+        """
+        Bootstrap a percentile confidence interval for VaR and CVaR.
+
+        Empirical VaR/CVaR from a single sample carry large sampling error — especially at
+        99%, where the estimate rests on a handful of tail observations. This resamples the
+        return series with replacement ``n_bootstrap`` times, recomputes VaR and CVaR on each
+        resample, and reports the central ``ci_level`` percentile interval of those draws:
+
+            VaR_b = -Q_{1-c}(R_b),  CVaR_b = -mean(R_b | R_b <= Q_{1-c}(R_b))
+
+        where R_b is the b-th resample. The interval is [P_{(1-ci)/2}, P_{1-(1-ci)/2}] of the
+        draws. Returns ``None`` when there are too few observations for a meaningful CI. The
+        computation is fully vectorized and deterministic for a fixed ``seed``.
+        """
+
+        cleaned = self._clean_return_series(returns)
+        n = len(cleaned)
+        if n < min_observations:
+            return None
+
+        values = cleaned.to_numpy(dtype=float)
+        rng = np.random.default_rng(seed)
+        resamples = values[rng.integers(0, n, size=(n_bootstrap, n))]
+        tail_quantile = 1.0 - confidence_level
+        thresholds = np.quantile(resamples, tail_quantile, axis=1, keepdims=True)
+        var_draws = -thresholds[:, 0]
+        tail_mask = resamples <= thresholds
+        tail_totals = np.where(tail_mask, resamples, 0.0).sum(axis=1)
+        tail_counts = np.maximum(tail_mask.sum(axis=1), 1)
+        cvar_draws = -(tail_totals / tail_counts)
+
+        lo_pct = (1.0 - ci_level) / 2.0
+        hi_pct = 1.0 - lo_pct
+        return TailRiskConfidenceInterval(
+            var_low=float(np.quantile(var_draws, lo_pct)),
+            var_high=float(np.quantile(var_draws, hi_pct)),
+            cvar_low=float(np.quantile(cvar_draws, lo_pct)),
+            cvar_high=float(np.quantile(cvar_draws, hi_pct)),
+            ci_level=ci_level,
+            n_bootstrap=n_bootstrap,
+        )
 
     def rolling_realized_vol(
         self,
@@ -195,6 +252,10 @@ class RiskAnalytics:
             rolling_correlation_matrix=rolling_correlation,
             factor_exposure_summary=factor_summary,
             warnings=warnings,
+            tail_risk_ci=self.bootstrap_tail_risk_ci(
+                return_history.portfolio_returns,
+                confidence_level=0.95,
+            ),
         )
 
     def factor_exposure_summary(

@@ -59,6 +59,16 @@ function RiskBody({ portfolio }: { portfolio: Portfolio }) {
         <MetricCard label="Realized vol" value={pct(r.rolling_vol)} tooltip="Annualized standard deviation of daily returns over the trailing window." />
       </div>
 
+      {r.tail_risk_ci && (
+        <p className="-mt-4 text-xs text-steel">
+          <LabelWithTooltip
+            label={`${Math.round(r.tail_risk_ci.ci_level * 100)}% bootstrap CI`}
+            tooltip={`Empirical VaR/CVaR carry sampling error, especially in the tail. Resampling the return history ${r.tail_risk_ci.n_bootstrap} times with replacement gives a confidence interval that shows how uncertain the point estimates are.`}
+          />
+          {": "}VaR 95% ∈ [{pct(r.tail_risk_ci.var_low)}, {pct(r.tail_risk_ci.var_high)}] · CVaR 95% ∈ [{pct(r.tail_risk_ci.cvar_low)}, {pct(r.tail_risk_ci.cvar_high)}]
+        </p>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <h3 className="font-serif text-2xl text-ink">

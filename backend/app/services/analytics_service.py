@@ -19,6 +19,7 @@ from app.schemas.risk import (
     DrawdownSummaryResponse,
     FactorExposureResponse,
     RiskSnapshotResponse,
+    TailRiskConfidenceIntervalResponse,
 )
 from app.schemas.similar_periods import SimilarPeriodResponse
 
@@ -99,6 +100,19 @@ def _serialize_risk(result: RiskAnalyticsResult, start_date: date, end_date: dat
     drawdown = result.drawdown
     factor = result.factor_exposure_summary
     concentration = result.concentration
+    ci = result.tail_risk_ci
+    tail_risk_ci = (
+        TailRiskConfidenceIntervalResponse(
+            var_low=ci.var_low,
+            var_high=ci.var_high,
+            cvar_low=ci.cvar_low,
+            cvar_high=ci.cvar_high,
+            ci_level=ci.ci_level,
+            n_bootstrap=ci.n_bootstrap,
+        )
+        if ci is not None
+        else None
+    )
     return RiskSnapshotResponse(
         start_date=start_date,
         end_date=end_date,
@@ -130,6 +144,7 @@ def _serialize_risk(result: RiskAnalyticsResult, start_date: date, end_date: dat
             r_squared=factor.r_squared,
             observations=factor.observations,
         ),
+        tail_risk_ci=tail_risk_ci,
         warnings=list(result.warnings),
     )
 

@@ -38,6 +38,17 @@ class FactorExposureResponse(BaseModel):
     observations: int
 
 
+class TailRiskConfidenceIntervalResponse(BaseModel):
+    """Bootstrap percentile confidence interval for the 95% VaR and CVaR estimates."""
+
+    var_low: float
+    var_high: float
+    cvar_low: float
+    cvar_high: float
+    ci_level: float
+    n_bootstrap: int
+
+
 class RiskSnapshotResponse(BaseModel):
     """Current risk snapshot for a portfolio over a lookback window."""
 
@@ -50,4 +61,5 @@ class RiskSnapshotResponse(BaseModel):
     drawdown: DrawdownSummaryResponse
     concentration: ConcentrationResponse
     factor_exposure: FactorExposureResponse
+    tail_risk_ci: TailRiskConfidenceIntervalResponse | None = None
     warnings: list[str] = []

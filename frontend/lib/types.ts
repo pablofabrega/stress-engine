@@ -70,6 +70,15 @@ export interface FactorExposure {
   observations: number;
 }
 
+export interface TailRiskConfidenceInterval {
+  var_low: number;
+  var_high: number;
+  cvar_low: number;
+  cvar_high: number;
+  ci_level: number;
+  n_bootstrap: number;
+}
+
 export interface RiskSnapshot {
   start_date: string;
   end_date: string;
@@ -80,6 +89,7 @@ export interface RiskSnapshot {
   drawdown: DrawdownSummary;
   concentration: Concentration;
   factor_exposure: FactorExposure;
+  tail_risk_ci: TailRiskConfidenceInterval | null;
   warnings: string[];
 }
 
