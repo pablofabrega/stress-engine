@@ -61,7 +61,14 @@ class SimilarPeriodsFinder:
         means = feature_frame.mean()
         stds = feature_frame.std(ddof=0).replace(0.0, 1.0)
         z_features = (feature_frame - means) / stds
-        shock_series = pd.Series({name: float(shock_vector.get(name, 0.0)) for name in self.FEATURE_ORDER}, dtype=float)
+        raw_shock = {name: float(shock_vector.get(name, 0.0)) for name in self.FEATURE_ORDER}
+        # A feature the shock does not express (absent, or exactly 0) is imputed to the historical
+        # mean so it contributes a neutral zero z-score. Otherwise a "no view" dimension would be
+        # read as "sitting at the zero level" and, after centering, inject spurious similarity signal.
+        shock_series = pd.Series(
+            {name: (means[name] if raw_shock[name] == 0.0 else raw_shock[name]) for name in self.FEATURE_ORDER},
+            dtype=float,
+        )
         z_shock = (shock_series - means) / stds
         shock_norm = float(np.linalg.norm(z_shock.values))
         if shock_norm == 0:

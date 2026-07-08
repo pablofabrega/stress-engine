@@ -175,6 +175,29 @@ def test_shock_direction_changes_ranking() -> None:
     assert base[0].start_date != flipped[0].start_date
 
 
+def test_unexpressed_shock_features_are_treated_as_neutral() -> None:
+    finder = _finder()
+    partial = _find(finder, shock={"equity_return": -0.05}, top_k=3)
+    explicit_zeros = _find(
+        finder,
+        shock={
+            "equity_return": -0.05,
+            "vol_change": 0.0,
+            "rate_change_10y": 0.0,
+            "credit_spread_change": 0.0,
+            "equity_bond_correlation_shift": 0.0,
+        },
+        top_k=3,
+    )
+
+    # Absent features and explicit zeros are both imputed to the mean, so they rank identically.
+    assert [(p.start_date, p.similarity_score) for p in partial] == [
+        (p.start_date, p.similarity_score) for p in explicit_zeros
+    ]
+    # The one expressed dimension (a negative equity move) drives the top match negative.
+    assert partial[0].feature_vector["equity_return"] < 0
+
+
 def test_results_are_deterministic() -> None:
     finder = _finder()
     first = _find(finder, top_k=3)
