@@ -325,24 +325,43 @@ class HypotheticalScenarioRunner:
         initial_value: float,
         instantaneous_return: float,
         horizon_days: int = 30,
+        n_paths: int = 500,
+        seed: int = 0,
     ) -> pd.DataFrame:
-        """Create a deterministic 30-day volatility-scaled stress path from the instantaneous shock."""
+        """
+        Project the post-shock value forward with a historical bootstrap and report the median path.
 
-        cleaned = portfolio_returns.dropna().astype(float)
-        daily_vol = float(cleaned.std(ddof=1)) if len(cleaned) >= 2 else 0.01
-        scale = min(max(abs(instantaneous_return) / max(daily_vol, 1e-6), 0.5), 3.0)
+        After applying the instantaneous shock, daily returns are resampled with replacement from
+        the portfolio's own return history to generate ``n_paths`` forward paths over the horizon.
+        The reported path is the day-by-day median of the simulations, with drawdown measured from
+        its running peak. This is a historical-simulation projection using real return data (no
+        synthetic generation) and is deterministic for a fixed ``seed``. It replaces the earlier
+        hand-shaped vol-scaled curve, which was not derived from any return model.
+        """
+
         days = np.arange(0, horizon_days + 1)
-        extension = daily_vol * np.sqrt(days / max(horizon_days, 1)) * scale * 0.40
-        signed_extension = -extension if instantaneous_return <= 0 else extension * -0.5
-        path_return = instantaneous_return + signed_extension
-        path_value = initial_value * (1.0 + path_return)
+        post_shock_value = initial_value * (1.0 + instantaneous_return)
+        cleaned = portfolio_returns.dropna().astype(float)
+
+        if len(cleaned) >= 2 and initial_value > 0:
+            sample = cleaned.to_numpy()
+            rng = np.random.default_rng(seed)
+            draws = sample[rng.integers(0, len(sample), size=(n_paths, horizon_days))]
+            forward_values = post_shock_value * np.cumprod(1.0 + draws, axis=1)
+            median_forward = np.median(forward_values, axis=0)
+            path_value = np.concatenate([[post_shock_value], median_forward])
+        else:
+            path_value = np.full(horizon_days + 1, post_shock_value, dtype=float)
+
+        path_return = path_value / initial_value - 1.0 if initial_value > 0 else np.zeros(horizon_days + 1)
+        projected_drawdown = path_value / np.maximum.accumulate(path_value) - 1.0
 
         return pd.DataFrame(
             {
                 "day": days,
                 "projected_return": path_return,
                 "projected_value": path_value,
-                "projected_drawdown": path_value / np.maximum.accumulate(path_value) - 1.0,
+                "projected_drawdown": projected_drawdown,
             }
         )
 

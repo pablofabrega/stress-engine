@@ -311,13 +311,20 @@ def test_result_bundle_exposes_required_outputs() -> None:
     }
 
 
-def test_simulated_drawdown_path_is_negative_for_a_loss_shock() -> None:
+def test_simulated_drawdown_path_starts_at_the_shock_and_tracks_drawdown() -> None:
     result = _run("equity_market", {"shock": -0.10})
     path = result.simulated_drawdown_path
 
-    assert path["projected_return"].iloc[0] < 0
-    assert (path["projected_drawdown"] <= 1e-9).all()
-    assert path["projected_return"].iloc[-1] <= path["projected_return"].iloc[0]
+    assert path["projected_return"].iloc[0] < 0  # day 0 reflects the instantaneous shock
+    assert (path["projected_drawdown"] <= 1e-9).all()  # drawdown measured from the path's running peak
+    assert len(path) == 31
+
+
+def test_simulated_drawdown_path_is_deterministic_for_a_fixed_seed() -> None:
+    first = _run("equity_market", {"shock": -0.10}).simulated_drawdown_path
+    second = _run("equity_market", {"shock": -0.10}).simulated_drawdown_path
+
+    pd.testing.assert_frame_equal(first, second)
 
 
 def test_post_shock_weights_renormalize_to_one() -> None:
