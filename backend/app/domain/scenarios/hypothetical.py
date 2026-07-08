@@ -6,13 +6,17 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from app.domain.data.fetchers import HistoricalDataFetcher
+from app.domain.data.fetchers import HistoricalDataFetcher, MacroDataFetcher
 from app.domain.portfolio.analytics import PortfolioAnalytics
 from app.domain.portfolio.models import PortfolioHolding
 from app.domain.risk.analytics import RiskAnalytics
 from app.domain.risk.constants import EQUITY_RATE_SENSITIVITY, FIXED_INCOME_DURATIONS, VIX_POSITIVE_TICKERS
 from app.domain.risk.liquidity import LiquidityRiskAnalyzer
 from app.domain.scenarios.models import HypotheticalScenarioDefinition, HypotheticalScenarioResult
+
+# Fallback sensitivity of equities to a unit (decimal) HY credit-spread widening, used when
+# macro history is unavailable to estimate it. Negative: wider spreads coincide with equity losses.
+DEFAULT_CREDIT_EQUITY_BETA = -0.35
 
 
 class HypotheticalScenarioRunner:
@@ -24,11 +28,13 @@ class HypotheticalScenarioRunner:
         portfolio_analytics: PortfolioAnalytics | None = None,
         risk_analytics: RiskAnalytics | None = None,
         liquidity_analyzer: LiquidityRiskAnalyzer | None = None,
+        macro_data_fetcher: MacroDataFetcher | None = None,
     ) -> None:
         self.historical_data_fetcher = historical_data_fetcher or HistoricalDataFetcher()
         self.portfolio_analytics = portfolio_analytics or PortfolioAnalytics(historical_data_fetcher=self.historical_data_fetcher)
         self.risk_analytics = risk_analytics or RiskAnalytics(portfolio_analytics=self.portfolio_analytics)
         self.liquidity_analyzer = liquidity_analyzer or LiquidityRiskAnalyzer(historical_data_fetcher=self.historical_data_fetcher)
+        self.macro_data_fetcher = macro_data_fetcher or MacroDataFetcher()
 
     def run_scenario(
         self,
@@ -59,6 +65,11 @@ class HypotheticalScenarioRunner:
             component_returns=historical_returns.component_returns,
             market_returns=market_returns,
         )
+        credit_equity_beta = (
+            self._estimate_spy_credit_beta(market_returns, start_date=lookback_start, end_date=as_of_date)
+            if scenario.scenario_type == "hy_credit_selloff"
+            else DEFAULT_CREDIT_EQUITY_BETA
+        )
 
         rows: list[dict[str, float | str]] = []
         stressed_losses: dict[str, float] = {}
@@ -72,6 +83,7 @@ class HypotheticalScenarioRunner:
                 portfolio_beta=portfolio_beta,
                 sector_correlations=sector_correlations,
                 holding_betas=holding_betas,
+                credit_equity_beta=credit_equity_beta,
             )
             shock_return = float(np.clip(shock_return, -0.95, 1.50))
             pnl = pre_value * shock_return
@@ -134,6 +146,7 @@ class HypotheticalScenarioRunner:
         portfolio_beta: float,
         sector_correlations: dict[str, float],
         holding_betas: dict[str, float],
+        credit_equity_beta: float,
     ) -> float:
         scenario_type = scenario.scenario_type
         params = scenario.parameters
@@ -190,7 +203,7 @@ class HypotheticalScenarioRunner:
             if holding.ticker.upper() == "LQD":
                 return -2.0 * spread_change
             if self._is_equity_like(holding):
-                return -0.35 * spread_change * max(beta, 0.5)
+                return credit_equity_beta * spread_change * max(beta, 0.5)
             return 0.0
 
         if scenario_type == "custom":
@@ -206,7 +219,9 @@ class HypotheticalScenarioRunner:
                     parameters={"bps_change": magnitude * 10000.0},
                     description=scenario.description,
                 )
-                return self._shock_return_for_holding(holding, rate_scenario, portfolio_beta, sector_correlations, holding_betas)
+                return self._shock_return_for_holding(
+                    holding, rate_scenario, portfolio_beta, sector_correlations, holding_betas, credit_equity_beta
+                )
             if factor == "EQUITY_MARKET":
                 eq_scenario = HypotheticalScenarioDefinition(
                     key=scenario.key,
@@ -215,7 +230,9 @@ class HypotheticalScenarioRunner:
                     parameters={"shock": magnitude},
                     description=scenario.description,
                 )
-                return self._shock_return_for_holding(holding, eq_scenario, portfolio_beta, sector_correlations, holding_betas)
+                return self._shock_return_for_holding(
+                    holding, eq_scenario, portfolio_beta, sector_correlations, holding_betas, credit_equity_beta
+                )
             return 0.0
 
         raise ValueError(f"Unsupported hypothetical scenario type '{scenario_type}'.")
@@ -255,6 +272,42 @@ class HypotheticalScenarioRunner:
             if np.isfinite(beta):
                 betas[str(ticker)] = beta
         return betas
+
+    def _estimate_spy_credit_beta(
+        self,
+        market_returns: pd.Series,
+        start_date: date,
+        end_date: date,
+        default: float = DEFAULT_CREDIT_EQUITY_BETA,
+        min_observations: int = 60,
+    ) -> float:
+        """
+        Estimate the market's return sensitivity to HY credit-spread widening.
+
+        Regresses market returns on daily changes in the ICE BofA US High Yield OAS
+        (FRED BAMLH0A0HYM2), expressing the spread change as a decimal fraction so it matches
+        the shock's units. The OLS slope is the contagion beta of equities to spread widening
+        (negative: wider spreads coincide with equity losses). This implements the spec's
+        "historical beta of SPY to HY spread widening" instead of a hardcoded coefficient, and
+        falls back to ``default`` when macro history is unavailable so the engine works offline.
+        """
+
+        market = market_returns.dropna().astype(float)
+        if market.empty:
+            return default
+        result = self.macro_data_fetcher.fetch_series("BAMLH0A0HYM2", start_date=start_date, end_date=end_date)
+        if result.data.empty:
+            return default
+        spread_column = "value" if "value" in result.data.columns else result.data.columns[0]
+        spread_change = (result.data[spread_column].astype(float) / 100.0).diff()
+        aligned = pd.concat([market.rename("mkt"), spread_change.rename("dspread")], axis=1).dropna()
+        if len(aligned) < min_observations:
+            return default
+        variance = float(aligned["dspread"].var(ddof=1))
+        if not np.isfinite(variance) or variance <= 0.0:
+            return default
+        beta = float(aligned["mkt"].cov(aligned["dspread"])) / variance
+        return beta if np.isfinite(beta) else default
 
     def _shock_holdings(self, holdings: list[PortfolioHolding], impacts: pd.DataFrame) -> list[PortfolioHolding]:
         shocked = deepcopy(holdings)

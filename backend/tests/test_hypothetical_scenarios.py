@@ -6,9 +6,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from app.domain.data.models import FetchResult
 from app.domain.portfolio.models import FactorDecompositionResult, PortfolioHolding, PortfolioReturnHistory
 from app.domain.risk.models import LiquidityAnalysisResult, LiquidityHoldingResult
-from app.domain.scenarios.hypothetical import HypotheticalScenarioRunner
+from app.domain.scenarios.hypothetical import DEFAULT_CREDIT_EQUITY_BETA, HypotheticalScenarioRunner
 from app.domain.scenarios.models import HypotheticalScenarioDefinition
 
 
@@ -48,6 +49,18 @@ class FakePortfolioAnalytics:
     def market_returns(self, start_date: date, end_date: date, market_ticker: str = "SPY") -> pd.Series:
         # Market proxy defined so AAPL's estimated beta is exactly 1.5 (market = AAPL / 1.5).
         return (_FAKE_AAPL / 1.5).rename(market_ticker)
+
+
+class FakeMacroDataFetcher:
+    def __init__(self, spread_pp: pd.Series | None = None) -> None:
+        if spread_pp is None:
+            # HY OAS built so d(spread_decimal) = -market/5 -> estimated SPY-credit beta = -5.0.
+            market = _FAKE_AAPL / 1.5
+            spread_pp = (0.05 - 0.2 * market.cumsum()) * 100.0
+        self._frame = pd.DataFrame({"value": spread_pp}) if not spread_pp.empty else pd.DataFrame()
+
+    def fetch_series(self, series_id: str, start_date: date, end_date: date) -> FetchResult:
+        return FetchResult(data=self._frame.copy(), source="fake", cache_hit=False, warnings=[])
 
 
 class FakeLiquidityAnalyzer:
@@ -110,6 +123,7 @@ def _runner() -> HypotheticalScenarioRunner:
     return HypotheticalScenarioRunner(
         portfolio_analytics=FakePortfolioAnalytics(),
         liquidity_analyzer=FakeLiquidityAnalyzer(),
+        macro_data_fetcher=FakeMacroDataFetcher(),
     )
 
 
@@ -148,6 +162,35 @@ def test_estimate_holding_betas_skips_thin_history() -> None:
     component = pd.DataFrame({"AAPL": market * 1.3}, index=index)
 
     assert _runner()._estimate_holding_betas(component, market) == {}
+
+
+def test_estimate_spy_credit_beta_regresses_market_on_spread_changes() -> None:
+    index = pd.date_range("2024-01-01", periods=80, freq="B", name="date")
+    market = pd.Series(np.linspace(-0.02, 0.02, 80), index=index)
+    spread_pp = (0.05 - 0.2 * market.cumsum()) * 100.0  # d(spread_decimal) = -market/5 -> slope -5
+    runner = HypotheticalScenarioRunner(
+        portfolio_analytics=FakePortfolioAnalytics(),
+        liquidity_analyzer=FakeLiquidityAnalyzer(),
+        macro_data_fetcher=FakeMacroDataFetcher(spread_pp=spread_pp),
+    )
+
+    beta = runner._estimate_spy_credit_beta(market, start_date=date(2024, 1, 1), end_date=date(2024, 4, 30))
+
+    assert beta == pytest.approx(-5.0)
+
+
+def test_estimate_spy_credit_beta_falls_back_without_macro_history() -> None:
+    index = pd.date_range("2024-01-01", periods=80, freq="B", name="date")
+    market = pd.Series(np.linspace(-0.02, 0.02, 80), index=index)
+    runner = HypotheticalScenarioRunner(
+        portfolio_analytics=FakePortfolioAnalytics(),
+        liquidity_analyzer=FakeLiquidityAnalyzer(),
+        macro_data_fetcher=FakeMacroDataFetcher(spread_pp=pd.Series(dtype=float)),
+    )
+
+    beta = runner._estimate_spy_credit_beta(market, start_date=date(2024, 1, 1), end_date=date(2024, 4, 30))
+
+    assert beta == DEFAULT_CREDIT_EQUITY_BETA
 
 
 def test_rates_shock_reprices_bonds_by_duration_and_equities_by_dcf_sensitivity() -> None:
@@ -216,8 +259,9 @@ def test_hy_credit_selloff_hits_hy_proxies_hardest_and_contaminates_equities() -
 
     impacts = result.holding_impacts.set_index("ticker")
     assert np.isclose(impacts.loc["HYG", "shock_return"], -0.08)
-    # -0.35 * spread_change(0.02) * max(beta 1.5, 0.5) = -0.0105
-    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.0105)
+    # Estimated SPY-credit beta from the fake macro history is -5.0:
+    # -5.0 * spread_change(0.02) * max(beta 1.5, 0.5) = -0.15
+    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.15)
     assert np.isclose(result.feature_vector["credit_spread_change"], 2.0)
 
 
