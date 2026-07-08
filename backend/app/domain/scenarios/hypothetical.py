@@ -54,6 +54,11 @@ class HypotheticalScenarioRunner:
             end_date=as_of_date,
         )
         sector_correlations = self._sector_correlation_map(holdings=holdings, component_returns=historical_returns.component_returns)
+        market_returns = self.portfolio_analytics.market_returns(start_date=lookback_start, end_date=as_of_date)
+        holding_betas = self._estimate_holding_betas(
+            component_returns=historical_returns.component_returns,
+            market_returns=market_returns,
+        )
 
         rows: list[dict[str, float | str]] = []
         stressed_losses: dict[str, float] = {}
@@ -66,6 +71,7 @@ class HypotheticalScenarioRunner:
                 scenario=scenario,
                 portfolio_beta=portfolio_beta,
                 sector_correlations=sector_correlations,
+                holding_betas=holding_betas,
             )
             shock_return = float(np.clip(shock_return, -0.95, 1.50))
             pnl = pre_value * shock_return
@@ -127,12 +133,15 @@ class HypotheticalScenarioRunner:
         scenario: HypotheticalScenarioDefinition,
         portfolio_beta: float,
         sector_correlations: dict[str, float],
+        holding_betas: dict[str, float],
     ) -> float:
         scenario_type = scenario.scenario_type
         params = scenario.parameters
+        # Per-name market beta where available, falling back to the portfolio beta.
+        beta = holding_betas.get(holding.ticker, portfolio_beta)
         if scenario_type == "equity_market":
             shock = float(params.get("shock", 0.0))
-            return shock * portfolio_beta if self._is_equity_like(holding) else 0.0
+            return shock * beta if self._is_equity_like(holding) else 0.0
 
         if scenario_type == "rates":
             bps_change = float(params.get("bps_change", 0.0))
@@ -160,7 +169,7 @@ class HypotheticalScenarioRunner:
             if holding.ticker.upper() in VIX_POSITIVE_TICKERS:
                 return 0.60 * relative_move
             if self._is_equity_like(holding):
-                return -0.08 * relative_move * max(portfolio_beta, 0.5)
+                return -0.08 * relative_move * max(beta, 0.5)
             return 0.0
 
         if scenario_type == "oil_shock":
@@ -181,7 +190,7 @@ class HypotheticalScenarioRunner:
             if holding.ticker.upper() == "LQD":
                 return -2.0 * spread_change
             if self._is_equity_like(holding):
-                return -0.35 * spread_change * max(portfolio_beta, 0.5)
+                return -0.35 * spread_change * max(beta, 0.5)
             return 0.0
 
         if scenario_type == "custom":
@@ -197,7 +206,7 @@ class HypotheticalScenarioRunner:
                     parameters={"bps_change": magnitude * 10000.0},
                     description=scenario.description,
                 )
-                return self._shock_return_for_holding(holding, rate_scenario, portfolio_beta, sector_correlations)
+                return self._shock_return_for_holding(holding, rate_scenario, portfolio_beta, sector_correlations, holding_betas)
             if factor == "EQUITY_MARKET":
                 eq_scenario = HypotheticalScenarioDefinition(
                     key=scenario.key,
@@ -206,10 +215,46 @@ class HypotheticalScenarioRunner:
                     parameters={"shock": magnitude},
                     description=scenario.description,
                 )
-                return self._shock_return_for_holding(holding, eq_scenario, portfolio_beta, sector_correlations)
+                return self._shock_return_for_holding(holding, eq_scenario, portfolio_beta, sector_correlations, holding_betas)
             return 0.0
 
         raise ValueError(f"Unsupported hypothetical scenario type '{scenario_type}'.")
+
+    def _estimate_holding_betas(
+        self,
+        component_returns: pd.DataFrame,
+        market_returns: pd.Series,
+        min_observations: int = 60,
+    ) -> dict[str, float]:
+        """
+        Estimate each holding's market beta as the OLS slope against the market proxy.
+
+        beta_i = Cov(r_i, r_mkt) / Var(r_mkt), computed from overlapping daily simple returns.
+        Holdings with fewer than ``min_observations`` overlapping points are omitted so the
+        caller falls back to the portfolio-level beta. This replaces applying a single portfolio
+        beta to every equity and captures cross-sectional beta dispersion (e.g. a high-beta
+        semiconductor name vs a low-beta utility take different hits in the same market shock).
+        """
+
+        if component_returns.empty or market_returns.dropna().empty:
+            return {}
+        market = market_returns.dropna().astype(float)
+        market_var = float(market.var(ddof=1))
+        if not np.isfinite(market_var) or market_var <= 0.0:
+            return {}
+
+        betas: dict[str, float] = {}
+        for ticker in component_returns.columns:
+            aligned = pd.concat(
+                [component_returns[ticker].rename("holding"), market.rename("market")],
+                axis=1,
+            ).dropna()
+            if len(aligned) < min_observations:
+                continue
+            beta = float(aligned["holding"].cov(aligned["market"])) / market_var
+            if np.isfinite(beta):
+                betas[str(ticker)] = beta
+        return betas
 
     def _shock_holdings(self, holdings: list[PortfolioHolding], impacts: pd.DataFrame) -> list[PortfolioHolding]:
         shocked = deepcopy(holdings)

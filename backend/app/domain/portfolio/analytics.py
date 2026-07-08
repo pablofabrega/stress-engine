@@ -98,6 +98,25 @@ class PortfolioAnalytics:
             warnings=warnings,
         )
 
+    def market_returns(
+        self,
+        start_date: date,
+        end_date: date,
+        market_ticker: str = "SPY",
+    ) -> pd.Series:
+        """
+        Return daily simple returns for the market proxy (default SPY) over the window.
+
+        Used as the independent variable when estimating per-holding market betas. Returns an
+        empty series if the proxy has no price data so callers can fall back gracefully.
+        """
+
+        result = self.historical_data_fetcher.fetch(market_ticker, start_date=start_date, end_date=end_date)
+        if result.data.empty:
+            return pd.Series(dtype=float, name=market_ticker)
+        price_column = "adj_close" if "adj_close" in result.data.columns else "close"
+        return ReturnsCalculator.simple_returns(result.data[price_column]).rename(market_ticker)
+
     def factor_decomposition(
         self,
         holdings: list[PortfolioHolding],

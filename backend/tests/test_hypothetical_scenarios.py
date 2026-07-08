@@ -12,6 +12,12 @@ from app.domain.scenarios.hypothetical import HypotheticalScenarioRunner
 from app.domain.scenarios.models import HypotheticalScenarioDefinition
 
 
+# 80 business days so per-name beta estimation clears its min-observations threshold.
+_FAKE_INDEX = pd.date_range("2024-01-01", periods=80, freq="B", name="date")
+_FAKE_AAPL = pd.Series(np.linspace(-0.03, 0.03, 80), index=_FAKE_INDEX, name="AAPL")
+_FAKE_TLT = pd.Series(np.linspace(0.004, -0.004, 80), index=_FAKE_INDEX, name="TLT")
+
+
 class FakePortfolioAnalytics:
     def factor_decomposition(self, holdings, start_date: date, end_date: date) -> FactorDecompositionResult:
         tech_weight = sum(holding.weight for holding in holdings if holding.sector == "Technology")
@@ -30,14 +36,7 @@ class FakePortfolioAnalytics:
         )
 
     def portfolio_return_history(self, holdings, start_date: date, end_date: date) -> PortfolioReturnHistory:
-        index = pd.date_range("2024-01-01", periods=5, freq="D", name="date")
-        component = pd.DataFrame(
-            {
-                "AAPL": [0.01, 0.02, -0.01, 0.015, -0.005],
-                "TLT": [0.002, -0.001, 0.003, 0.001, 0.0],
-            },
-            index=index,
-        )
+        component = pd.DataFrame({"AAPL": _FAKE_AAPL, "TLT": _FAKE_TLT})
         portfolio = component.mul(pd.Series({"AAPL": 0.6, "TLT": 0.4}), axis=1).sum(axis=1)
         return PortfolioReturnHistory(
             portfolio_returns=portfolio,
@@ -45,6 +44,10 @@ class FakePortfolioAnalytics:
             weights_used={"AAPL": 0.6, "TLT": 0.4},
             warnings=[],
         )
+
+    def market_returns(self, start_date: date, end_date: date, market_ticker: str = "SPY") -> pd.Series:
+        # Market proxy defined so AAPL's estimated beta is exactly 1.5 (market = AAPL / 1.5).
+        return (_FAKE_AAPL / 1.5).rename(market_ticker)
 
 
 class FakeLiquidityAnalyzer:
@@ -94,12 +97,13 @@ def test_equity_market_hypothetical_shock_applies_beta_scaled_loss() -> None:
     result = runner.run_scenario(holdings=holdings, scenario=scenario, as_of_date=date(2024, 2, 1))
 
     impacts = result.holding_impacts.set_index("ticker")
-    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.126)
+    # AAPL's per-name beta is 1.5 (market proxy = AAPL / 1.5), so a -10% shock -> -15%.
+    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.15)
     assert np.isclose(impacts.loc["TLT", "shock_return"], 0.0)
-    assert np.isclose(result.instantaneous_pnl_dollars, -75.6)
-    assert np.isclose(result.instantaneous_return, -0.0756)
+    assert np.isclose(result.instantaneous_pnl_dollars, -90.0)
+    assert np.isclose(result.instantaneous_return, -0.09)
     assert result.feature_vector["equity_return"] == -0.10
-    assert np.isclose(result.liquidity_adjusted_loss, -75.6)
+    assert np.isclose(result.liquidity_adjusted_loss, -90.0)
 
 
 def _runner() -> HypotheticalScenarioRunner:
@@ -127,6 +131,25 @@ def _run(scenario_type: str, parameters: dict[str, float | str], holdings: list[
     )
 
 
+def test_estimate_holding_betas_recovers_per_name_slopes() -> None:
+    index = pd.date_range("2024-01-01", periods=80, freq="B", name="date")
+    market = pd.Series(np.linspace(-0.02, 0.02, 80), index=index)
+    component = pd.DataFrame({"HIGH": market * 2.0, "LOW": market * 0.5}, index=index)
+
+    betas = _runner()._estimate_holding_betas(component, market)
+
+    assert betas["HIGH"] == pytest.approx(2.0)
+    assert betas["LOW"] == pytest.approx(0.5)
+
+
+def test_estimate_holding_betas_skips_thin_history() -> None:
+    index = pd.date_range("2024-01-01", periods=10, freq="B", name="date")
+    market = pd.Series(np.linspace(-0.02, 0.02, 10), index=index)
+    component = pd.DataFrame({"AAPL": market * 1.3}, index=index)
+
+    assert _runner()._estimate_holding_betas(component, market) == {}
+
+
 def test_rates_shock_reprices_bonds_by_duration_and_equities_by_dcf_sensitivity() -> None:
     result = _run("rates", {"bps_change": 100})
 
@@ -150,7 +173,8 @@ def test_vix_spike_drags_equities_by_relative_move_and_beta() -> None:
     result = _run("vix_spike", {"current_vix": 20.0, "target_vix": 40.0})
 
     impacts = result.holding_impacts.set_index("ticker")
-    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.1008)
+    # -0.08 * relative_move(1.0) * max(beta 1.5, 0.5) = -0.12
+    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.12)
     assert np.isclose(impacts.loc["TLT", "shock_return"], 0.0)
     assert np.isclose(result.feature_vector["vol_change"], 20.0)
 
@@ -192,7 +216,8 @@ def test_hy_credit_selloff_hits_hy_proxies_hardest_and_contaminates_equities() -
 
     impacts = result.holding_impacts.set_index("ticker")
     assert np.isclose(impacts.loc["HYG", "shock_return"], -0.08)
-    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.00875)
+    # -0.35 * spread_change(0.02) * max(beta 1.5, 0.5) = -0.0105
+    assert np.isclose(impacts.loc["AAPL", "shock_return"], -0.0105)
     assert np.isclose(result.feature_vector["credit_spread_change"], 2.0)
 
 
